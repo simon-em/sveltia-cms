@@ -7,7 +7,7 @@ import { getIndexFile } from '$lib/services/contents/collection/index-file';
 import { getLocalePath } from '$lib/services/contents/i18n';
 
 /**
- * @import { CustomFileFormat, FileConfig, InternalI18nOptions } from '$lib/types/private';
+ * @import { CustomFileFormat, FileConfig, InternalI18nOptions, CustomPreviewRenderer } from '$lib/types/private';
  * @import { Collection, CollectionFile, FileExtension, FileFormat } from '$lib/types/public';
  */
 
@@ -15,6 +15,11 @@ import { getLocalePath } from '$lib/services/contents/i18n';
  * @type {Map<string, CustomFileFormat>}
  */
 export const customFileFormatRegistry = new Map();
+
+/**
+ * @type {Record<string, CustomPreviewRenderer>}
+ */
+export const customPreviewRenderers = {};
 
 /**
  * Detect a file extension from the given entry file configuration.

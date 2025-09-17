@@ -3,7 +3,10 @@ import { createElement } from 'react';
 import { mount } from 'svelte';
 
 import { customPreviewStyleRegistry } from '$lib/services/contents/editor';
-import { customFileFormatRegistry } from '$lib/services/contents/file/config';
+import {
+  customFileFormatRegistry,
+  customPreviewRenderers,
+} from '$lib/services/contents/file/config';
 import { customComponentRegistry } from '$lib/services/contents/widgets/markdown/components/definitions';
 
 import App from './components/app.svelte';
@@ -104,6 +107,15 @@ const registerEditorComponent = (definition) => {
 };
 
 /**
+ * Register a custom preview renderer.
+ * @param {string} name Renderer name.
+ * @param {any} fn Renderer function.
+ */
+const registerCustomPreviewRenderer = (name, fn) => {
+  customPreviewRenderers[name] = fn;
+};
+
+/**
  * Register an event listener.
  * @param {AppEventListener} eventListener Event listener.
  * @see https://decapcms.org/docs/registering-events/
@@ -166,6 +178,7 @@ const CMS = new Proxy(
   {
     init,
     registerCustomFormat,
+    registerCustomPreviewRenderer,
     registerEditorComponent,
     registerEventListener,
     registerPreviewStyle,

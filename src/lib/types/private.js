@@ -324,6 +324,13 @@
  */
 
 /**
+ * Custom preview renderer definition.
+ * @typedef {object} CustomPreviewRenderer
+ * @property {string} name Renderer name.
+ * @property {any} [fn] Renderer function.
+ */
+
+/**
  * Global, collection-level, file-level or field-level asset folder information.
  * @typedef {object} AssetFolderInfo
  * @property {string | undefined} collectionName Collection name or `undefined` for the All Assets

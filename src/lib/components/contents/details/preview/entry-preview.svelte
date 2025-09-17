@@ -6,6 +6,8 @@
   import FieldPreview from '$lib/components/contents/details/preview/field-preview.svelte';
   import { entryDraft } from '$lib/services/contents/draft';
   import { customPreviewStyleRegistry } from '$lib/services/contents/editor';
+  import { customPreviewRenderers } from '$lib/services/contents/file/config';
+  import PreviewRenderer from './preview-renderer.svelte';
 
   /**
    * @import { InternalLocaleCode } from '$lib/types/private';
@@ -24,6 +26,8 @@
   } = $props();
 
   const fields = $derived($entryDraft?.fields ?? []);
+
+  const customPreviewRenderer = $derived(customPreviewRenderers[$entryDraft?.collectionName || '']);
 </script>
 
 {#snippet children()}
@@ -34,15 +38,21 @@
   {/each}
 {/snippet}
 
-<VisibilityObserver>
-  {#if customPreviewStyleRegistry.size}
-    <EntryPreviewIframe {locale} styleURLs={[...customPreviewStyleRegistry]} {children} />
-  {:else}
-    <div role="document" aria-label={$_('content_preview')}>
-      {@render children()}
-    </div>
-  {/if}
-</VisibilityObserver>
+{#if customPreviewRenderer}
+  <VisibilityObserver>
+    <PreviewRenderer previewRenderer={customPreviewRenderer} {locale} />
+  </VisibilityObserver>
+{:else}
+  <VisibilityObserver>
+    {#if customPreviewStyleRegistry.size}
+      <EntryPreviewIframe {locale} styleURLs={[...customPreviewStyleRegistry]} {children} />
+    {:else}
+      <div role="document" aria-label={$_('content_preview')}>
+        {@render children()}
+      </div>
+    {/if}
+  </VisibilityObserver>
+{/if}
 
 <style lang="scss">
   div {
