@@ -226,14 +226,58 @@ const readTextFile = async (entryFile) => {
  * {@link allEntries} and {@link allAssets} stores.
  * @param {FileSystemDirectoryHandle} rootDirHandle Root directory handle.
  */
+
+function dataURLToBlob(dataURL) {
+  // Split the dataURL into the header and the data
+  const [header, base64Data] = dataURL.split(',');
+
+  // Get the MIME type from the header
+  const mime = header.match(/:(.*?);/)[1];
+
+  // Decode the base64 string to binary
+  const binary = atob(base64Data);
+  const array = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    array[i] = binary.charCodeAt(i);
+  }
+
+  // Create a Blob from the typed array
+  return new Blob([array], { type: mime });
+}
+
 export const loadFiles = async (rootDirHandle) => {
-  const { entryFiles, assetFiles, configFiles } = createFileList(await getAllFiles(rootDirHandle));
+  //const files = await getAllFiles(rootDirHandle);
+  const allFiles = await apiAll();
+
+  const files = await Promise.all(
+    allFiles
+      .map(({ handle, content, data }) => {
+        if (content) {
+          return {
+            file: new File([JSON.stringify(content)], handle),
+            path: handle,
+          };
+        }
+        // const binaryString = atob(data.blob);
+
+        // return {
+        //   file: new File([binaryString], handle),
+        //   path: handle,
+        // };
+
+        return {
+          file: new File([dataURLToBlob(data.blob)], handle),
+          path: handle,
+        };
+      })
+      .map(normalizeFileListItem),
+  );
+
+  const { entryFiles, assetFiles, configFiles } = createFileList(files);
 
   await Promise.all([...entryFiles, ...configFiles].map(readTextFile));
 
   const { entries, errors } = await prepareEntries(entryFiles);
-
-  console.log(entries, assetFiles);
 
   allEntries.set(entries);
   allAssets.set(parseAssetFiles(assetFiles));
@@ -264,6 +308,48 @@ const moveFile = async ({ rootDirHandle, previousPath, path }) => {
 };
 
 /**
+
+ * @param {string} path
+ * @param {object} data
+
+ */
+
+const apiWrite = async (path, data) => {
+  await fetch('/api/entries', {
+    method: 'POST',
+    body: JSON.stringify({
+      entry: {
+        handle: path,
+        ...data,
+      },
+    }),
+    headers: {
+      'Content-Type': 'application/json',
+    },
+  });
+};
+
+const apiDelete = async (path) => {
+  await fetch('/api/entries', {
+    method: 'DELETE',
+    body: JSON.stringify({
+      entry: {
+        handle: path,
+      },
+    }),
+    headers: {
+      'Content-Type': 'application/json',
+    },
+  });
+};
+
+const apiAll = async () => {
+  const response = await fetch('/api/entries');
+
+  return await response.json();
+};
+
+/**
  * Write data to a file at the specified path.
  * @param {object} args Arguments.
  * @param {FileSystemDirectoryHandle} args.rootDirHandle Root directory handle.
@@ -273,28 +359,28 @@ const moveFile = async ({ rootDirHandle, previousPath, path }) => {
  * @param {string | File} args.data The data to write to the file.
  * @returns {Promise<File>} Written file.
  */
+
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+
+    reader.onload = () => resolve(reader.result); // just Base64
+    //reader.onload = () => resolve(reader.result.split(',')[1]); // just Base64
+    reader.onerror = (error) => reject(error);
+
+    reader.readAsDataURL(file); // reads file and encodes as Base64 Data URL
+  });
+}
+
 const writeFile = async ({ rootDirHandle, fileHandle, path, data }) => {
-  fileHandle ??= await getFileHandle(rootDirHandle, path);
-
-  // The `createWritable` method is not yet supported by Safari
-  // @see https://bugs.webkit.org/show_bug.cgi?id=254726
-  const writer = await fileHandle.createWritable?.();
-
   try {
-    console.log(data);
-    await writer?.write(data);
-  } catch {
-    // Can throw if the file has just been moved/renamed without any change, and then the `data` is
-    // no longer available
-  } finally {
-    try {
-      await writer?.close();
-    } catch {
-      //
+    if (typeof data == 'string') {
+      await apiWrite(path, { content: JSON.parse(data) });
+    } else {
+      await apiWrite(path, { data: { blob: await fileToBase64(data) } });
     }
-  }
-
-  return fileHandle.getFile();
+  } catch {}
+  return new File([data], path);
 };
 
 /**
@@ -334,6 +420,11 @@ const deleteEmptyParentDirs = async (rootDirHandle, pathSegments) => {
  */
 const deleteFile = async ({ rootDirHandle, path }) => {
   const { dirname: dirPath = '', basename: fileName } = getPathInfo(stripSlashes(path));
+
+  console.log(dirPath, fileName, path);
+
+  await apiDelete(path);
+
   const dirHandle = await getDirectoryHandle(rootDirHandle, dirPath);
 
   await dirHandle.removeEntry(fileName);

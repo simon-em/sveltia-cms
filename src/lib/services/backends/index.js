@@ -5,6 +5,7 @@ import test from '$lib/services/backends/fs/test';
 import gitea from '$lib/services/backends/git/gitea';
 import github from '$lib/services/backends/git/github';
 import gitlab from '$lib/services/backends/git/gitlab';
+import api from '$lib/services/backends/fs/api';
 
 /**
  * @import { Readable, Writable } from 'svelte/store';
@@ -23,6 +24,7 @@ export const allBackendServices = {
   gitea,
   local,
   'test-repo': test,
+  api,
 };
 
 /**
