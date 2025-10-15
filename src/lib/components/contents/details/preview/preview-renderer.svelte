@@ -12,6 +12,13 @@
 
   let htmlContent = $state(null);
 
+  let frames = $state([]);
+
+  let refs = $state({});
+  let idx = 0;
+
+  let scrollY = $state(0);
+
   const convertToNestedObject = (flatObj) => {
     const result = {};
 
@@ -101,7 +108,9 @@
     const currentValue = await getCurrentValue();
 
     if (currentValue) {
-      htmlContent = await out(currentValue);
+      frames.push({ frameRef: undefined, id: idx++, content: await out(currentValue) });
+
+      // htmlContent = await out(currentValue);
     }
   });
 
@@ -110,26 +119,92 @@
       const currentValue = await getCurrentValue();
 
       if (currentValue && out) {
-        htmlContent = await out(currentValue);
+        frames.push({
+          id: idx++,
+          content: await out(currentValue),
+          loading: false,
+          loaded: false,
+          hidden: false,
+        });
       }
     })();
   });
 
   $effect(() => {
-    //const iframeDoc = iFrameRef.contentDocument || iFrameRef.contentWindow.document;
+    const notLoadingIds = frames.filter((x) => !x.loading).map((x) => x.id.toString());
 
-    //console.log('hello', htmlContent);
+    for (const [key, value] of Object.entries(refs)) {
+      if (notLoadingIds.indexOf(key.toString()) >= 0 && value) {
+        const frame = frames.find((x) => x.id == key);
 
-    //iframeDoc.body.innerHtml = htmlContent;
+        if (!frame) {
+          continue;
+        }
 
-    //iFrameRef.src = 'data:text/html,' + encodeURIComponent(htmlContent);
+        value.srcdoc = frame.content;
 
-    iFrameRef.srcdoc = htmlContent;
+        value.addEventListener('load', () => {
+          const iframeDoc = value.contentDocument || value.contentWindow.document;
+
+          iframeDoc.addEventListener('scroll', () => {
+            scrollY = iframeDoc.documentElement.scrollTop;
+
+            console.log('scroll', scrollY);
+          });
+
+          const frame = frames.find((x) => x.id == key);
+
+          if (!frame) {
+            return;
+          }
+
+          for (const frame of frames) {
+            if (+frame.id < +key) {
+              frame.hidden = true;
+            }
+          }
+
+          frame.loaded = true;
+
+          const iframeWindow = value.contentWindow;
+
+          console.log('scrollTo', +scrollY || 0);
+
+          iframeWindow.scrollTo(0, +scrollY || 0);
+        });
+
+        frame.loading = true;
+      }
+    }
   });
+
+  // $effect(() => {
+  //   //const iframeDoc = iFrameRef.contentDocument || iFrameRef.contentWindow.document;
+
+  //   //console.log('hello', htmlContent);
+
+  //   //iframeDoc.body.innerHtml = htmlContent;
+
+  //   //iFrameRef.src = 'data:text/html,' + encodeURIComponent(htmlContent);
+
+  //   iFrameRef.srcdoc = htmlContent;
+  // });
 </script>
 
-<div bind:this={mainRef} style="width:100%; height:100%">
-  <iframe bind:this={iFrameRef} width="100%" height="100%" class="w-full h-full"> </iframe>
+<div bind:this={mainRef} style="width:100%; height:100%; position:relative;">
+  {#each frames as frame (frame.id)}
+    {#if !frame.hidden}
+      <iframe
+        bind:this={refs[frame.id]}
+        width="100%"
+        height="100%"
+        style="width: 100%; height:100%; position:absolute; top:0;left:0; right:0; transition: opacity 0ms ease-in-out; bottom:0; opacity: {frame.loaded
+          ? 1
+          : 0}"
+      >
+      </iframe>
+    {/if}
+  {/each}
 
   {#if false && htmlContent}
     {@html htmlContent}
