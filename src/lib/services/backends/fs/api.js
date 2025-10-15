@@ -64,16 +64,21 @@ export const fetchBlob = async (asset) => {
   const { path } = asset;
   console.log(asset, path);
 
-  const { file } = await (
-    await fetch(`/api/entries/blob?entry[handle]=${encodeURIComponent(path)}`)
+  const { file_url } = await (
+    await fetch(`/admin/entries/show?handle=${encodeURIComponent(path)}`, {
+      headers: {
+        'X-CSRF-Token': document.querySelector('meta[name=csrf-token]').content,
+      },
+    })
   ).json();
 
-  return (await fetch(file)).blob();
+  return (await fetch(file_url)).blob();
 };
 
 /**
  * @type {BackendService}
  */
+// @ts-ignore
 export default {
   isGit: false,
   name: backendName,

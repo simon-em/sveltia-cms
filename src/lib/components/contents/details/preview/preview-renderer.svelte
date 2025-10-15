@@ -44,12 +44,53 @@
     return result;
   };
 
-  const getCurrentValue = () => {
+  async function objectUrlToDataURI(objectUrl) {
+    const response = await fetch(objectUrl);
+    const blob = await response.blob();
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  }
+
+  /**
+   * Recursively replaces any 'blob:' URLs in an object or array
+   * with their equivalent Data URIs.
+   */
+  async function replaceBlobUrlsWithDataUris(obj) {
+    if (Array.isArray(obj)) {
+      // Recurse into array items
+      return Promise.all(obj.map((item) => replaceBlobUrlsWithDataUris(item)));
+    } else if (obj && typeof obj === 'object') {
+      // Recurse into object keys
+      const entries = await Promise.all(
+        Object.entries(obj).map(async ([key, value]) => {
+          return [key, await replaceBlobUrlsWithDataUris(value)];
+        }),
+      );
+      return Object.fromEntries(entries);
+    } else if (typeof obj === 'string' && obj.startsWith('blob:')) {
+      // Found a blob URL — convert to Data URI
+      try {
+        return await objectUrlToDataURI(obj);
+      } catch (err) {
+        console.warn('Failed to convert blob URL:', obj, err);
+        return obj; // fallback to original
+      }
+    }
+
+    // Base case — return as-is
+    return obj;
+  }
+
+  const getCurrentValue = async () => {
     const currentValue = $entryDraft?.currentValues[locale] || {};
 
-    const obj = convertToNestedObject(currentValue);
+    let obj = convertToNestedObject(currentValue);
 
-    console.log(obj);
+    obj = await replaceBlobUrlsWithDataUris(obj);
 
     return { value: obj, locale };
   };
@@ -57,7 +98,7 @@
   onMount(async () => {
     out = previewRenderer(mainRef);
 
-    const currentValue = getCurrentValue();
+    const currentValue = await getCurrentValue();
 
     if (currentValue) {
       htmlContent = await out(currentValue);
@@ -65,13 +106,13 @@
   });
 
   $effect(() => {
-    const currentValue = getCurrentValue();
+    (async () => {
+      const currentValue = await getCurrentValue();
 
-    if (currentValue && out) {
-      (async () => {
+      if (currentValue && out) {
         htmlContent = await out(currentValue);
-      })();
-    }
+      }
+    })();
   });
 
   $effect(() => {

@@ -335,30 +335,42 @@ const apiWrite = async (path, { file, content }) => {
     formData.append('entry[content]', content);
   }
 
-  await fetch('/api/entries', {
+  await fetch('/admin/entries', {
     method: 'POST',
     body: formData,
+    headers: {
+      'X-CSRF-Token': document.querySelector('meta[name=csrf-token]').content,
+    },
   });
 };
 
 const apiDelete = async (path) => {
-  await fetch('/api/entries', {
+  await fetch('/admin/entries', {
     method: 'DELETE',
     body: JSON.stringify({
-      entry: {
-        handle: path,
-      },
+      handle: path,
     }),
     headers: {
       'Content-Type': 'application/json',
+      'X-CSRF-Token': document.querySelector('meta[name=csrf-token]').content,
     },
   });
 };
 
 const apiAll = async () => {
-  const response = await fetch('/api/entries');
+  console.log('in44');
 
-  return await response.json();
+  const response = await fetch('/admin/entries', {
+    headers: {
+      'X-CSRF-Token': document.querySelector('meta[name=csrf-token]').content,
+    },
+  });
+
+  const data = await response.json();
+
+  console.log(data);
+
+  return data.entries;
 };
 
 /**
