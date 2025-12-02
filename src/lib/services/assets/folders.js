@@ -3,8 +3,7 @@ import { derived, get, writable } from 'svelte/store';
 
 /**
  * @import { Readable, Writable } from 'svelte/store';
- * @import { AssetFolderInfo } from '$lib/types/private';
- * @import { FieldKeyPath } from '$lib/types/public';
+ * @import { AssetFolderInfo, TypedFieldKeyPath } from '$lib/types/private';
  */
 
 /**
@@ -47,16 +46,23 @@ export const targetAssetFolder = derived(
 );
 
 /**
- * Get an asset folder that matches the given condition.
- * @param {object} args Arguments.
- * @param {string | undefined} args.collectionName Collection name.
- * @param {string} [args.fileName] Collection file name. File/singleton collection only.
- * @param {FieldKeyPath} [args.keyPath] Field key path.
- * @returns {AssetFolderInfo | undefined} Asset folder information.
+ * Get an asset folder that matches the given conditions.
+ * @param {object} cond Conditions.
+ * @param {string | undefined} cond.collectionName Collection name.
+ * @param {string} [cond.fileName] Collection file name. File/singleton collection only.
+ * @param {TypedFieldKeyPath} [cond.typedKeyPath] Field key path. Required for field-level media
+ * folders.
+ * @param {boolean} [cond.isIndexFile] Whether the asset folder is for the special index file used
+ * specifically in Hugo. It works only for field-level media folders in an entry collection.
+ * @returns {AssetFolderInfo | undefined} Asset folder information if found.
  */
-export const getAssetFolder = ({ collectionName, fileName, keyPath }) =>
+export const getAssetFolder = (cond) =>
   get(allAssetFolders).find(
-    (f) => f.collectionName === collectionName && f.fileName === fileName && f.keyPath === keyPath,
+    (folder) =>
+      folder.collectionName === cond.collectionName &&
+      folder.fileName === cond.fileName &&
+      ('typedKeyPath' in cond ? folder.typedKeyPath === cond.typedKeyPath : true) &&
+      ('isIndexFile' in cond ? folder.isIndexFile === cond.isIndexFile : true),
   );
 
 /**
@@ -89,13 +95,13 @@ export const getAssetFoldersByPath = (path, { matchSubFolders = true } = {}) => 
       // Compare that the enclosing directory is exactly the same as the internal path, and ignore
       // any subdirectories, unless the `matchSubFolders` option is specified. The internal path can
       // contain template tags like `{{slug}}` so that we have to take it into account.
-      const regex = new RegExp(
-        `^${internalPath.replace(/{{.+?}}/g, '.+?')}${internalPath && matchSubFolders ? '\\b' : '$'}`,
-      );
+      const normalizedPath = internalPath.replace(/{{.+?}}/g, '.+?');
+      const anchor = internalPath && matchSubFolders ? '\\b' : '$';
+      const regex = new RegExp(`^${normalizedPath}${anchor}`);
 
       return regex.test(getPathInfo(path).dirname ?? '');
     })
-    .sort((a, b) => (b.internalPath ?? '').localeCompare(a.internalPath ?? '') ?? 0);
+    .sort((a, b) => (b.internalPath ?? '').localeCompare(a.internalPath ?? ''));
 };
 
 /**

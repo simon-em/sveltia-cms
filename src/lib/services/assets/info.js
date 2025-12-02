@@ -8,7 +8,7 @@ import { get } from 'svelte/store';
 import { getAssetByPath } from '$lib/services/assets';
 import { getAssetFoldersByPath, globalAssetFolder } from '$lib/services/assets/folders';
 import { backend } from '$lib/services/backends';
-import { siteConfig } from '$lib/services/config';
+import { cmsConfig } from '$lib/services/config';
 import { getEntriesByAssetURL } from '$lib/services/contents/collection/entries';
 import { createPathRegEx, encodeFilePath } from '$lib/services/utils/file';
 import { getMediaMetadata } from '$lib/services/utils/media';
@@ -20,8 +20,8 @@ import { renderPDF } from '$lib/services/utils/media/pdf';
  * Asset,
  * AssetDetails,
  * Entry,
+ * InternalCmsConfig,
  * InternalImageTransformationOptions,
- * InternalSiteConfig,
  * } from '$lib/types/private';
  */
 
@@ -38,7 +38,7 @@ const requestedAssetPaths = new Set();
  * @returns {Promise<Blob>} Blob.
  */
 export const getAssetBlob = async (asset, retryCount = 0) => {
-  const { file, blobURL, name, path } = asset;
+  const { file, handle, blobURL, name, path } = asset;
 
   if (blobURL) {
     return fetch(blobURL).then((r) => r.blob());
@@ -49,6 +49,12 @@ export const getAssetBlob = async (asset, retryCount = 0) => {
 
   if (file) {
     blob = file;
+  } else if (handle) {
+    try {
+      blob = await handle.getFile();
+    } catch {
+      throw new Error('Failed to retrieve blob from file handle');
+    }
   } else {
     // If the blob is already being requested, wait for it to prevent multiple requests. If the
     // `blobURL` is still not available after 25 retries, or 5 seconds, fetch the file directly.
@@ -174,7 +180,7 @@ export const getAssetPublicURL = (
   }
 
   const { _baseURL: baseURL = '', output: { encode_file_path: encodingEnabled = false } = {} } =
-    /** @type {InternalSiteConfig} */ (get(siteConfig));
+    /** @type {InternalCmsConfig} */ (get(cmsConfig));
 
   let path = hasTemplateTags
     ? asset.path.replace(

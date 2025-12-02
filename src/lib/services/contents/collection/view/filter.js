@@ -7,7 +7,7 @@ import { getPropertyValue } from '$lib/services/contents/entry/fields';
 import { getRegex } from '$lib/services/utils/misc';
 
 /**
- * @import { Entry, FilteringConditions, InternalCollection } from '$lib/types/private';
+ * @import { Entry, FilteringConditions, InternalEntryCollection } from '$lib/types/private';
  * @import { ViewFilter, ViewFilters } from '$lib/types/public';
  */
 
@@ -25,7 +25,7 @@ export const parseFilterConfig = (filters) => {
   }
 
   if (isObject(filters)) {
-    const { filters: options, default: defaultFilterName } = /** @type {ViewFilters} */ (filters);
+    const { filters: options, default: defaultFilterName } = filters;
 
     if (Array.isArray(options)) {
       const defaultFilter = defaultFilterName
@@ -47,7 +47,7 @@ export const parseFilterConfig = (filters) => {
 /**
  * Filter the given entries.
  * @param {Entry[]} entries Entry list.
- * @param {InternalCollection} collection Collection that the entries belong to.
+ * @param {InternalEntryCollection} collection Collection that the entries belong to.
  * @param {FilteringConditions[]} filters One or more filtering conditions.
  * @returns {Entry[]} Filtered entry list.
  * @see https://decapcms.org/docs/configuration-options/#view_filters
@@ -91,18 +91,20 @@ export const filterEntries = (entries, collection, filters) => {
 };
 
 /**
- * View filters for the selected entry collection.
- * @type {import('svelte/store').Readable<ViewFilter[]>}
+ * Initialize view filters for a collection.
+ * @internal
+ * @param {any} collection Collection (entry or file).
+ * @param {(options: ViewFilter[]) => void} set Callback to set the filter options.
  */
-export const viewFilters = derived([selectedCollection], ([_collection], set) => {
-  // Disable sorting for file/singleton collection
-  if (!_collection?.folder) {
+export const initializeViewFilters = (collection, set) => {
+  // Disable filters for file/singleton collection
+  if (!collection || !('folder' in collection)) {
     set([]);
 
     return;
   }
 
-  const { options, default: defaultFilter } = parseFilterConfig(_collection.view_filters);
+  const { options, default: defaultFilter } = parseFilterConfig(collection.view_filters);
 
   set(options);
 
@@ -110,4 +112,12 @@ export const viewFilters = derived([selectedCollection], ([_collection], set) =>
     ..._view,
     filters: _view.filters ?? (defaultFilter ? [defaultFilter] : undefined),
   }));
+};
+
+/**
+ * View filters for the selected entry collection.
+ * @type {import('svelte/store').Readable<ViewFilter[]>}
+ */
+export const viewFilters = derived([selectedCollection], ([collection], set) => {
+  initializeViewFilters(collection, set);
 });

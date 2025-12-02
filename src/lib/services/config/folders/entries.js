@@ -9,8 +9,8 @@ import { getLocalePath } from '$lib/services/contents/i18n';
 import { normalizeI18nConfig } from '$lib/services/contents/i18n/config';
 
 /**
- * @import { EntryFolderInfo, InternalLocaleCode, InternalSiteConfig } from '$lib/types/private';
- * @import { Collection, CollectionFile } from '$lib/types/public';
+ * @import { EntryFolderInfo, InternalCmsConfig, InternalLocaleCode } from '$lib/types/private';
+ * @import { Collection, CollectionFile, EntryCollection, FileCollection } from '$lib/types/public';
  */
 
 /**
@@ -63,13 +63,13 @@ export const compareFilePath = (a, b) =>
 
 /**
  * Get entry collection folders.
- * @param {InternalSiteConfig} config Site configuration.
+ * @param {InternalCmsConfig} config CMS configuration.
  * @returns {EntryFolderInfo[]} Entry folders.
  */
 export const getEntryCollectionFolders = ({ collections }) =>
   getValidCollections({ collections, type: 'entry', visible: true })
     .map((collection) => {
-      const { name: collectionName, folder } = collection;
+      const { name: collectionName, folder } = /** @type {EntryCollection} */ (collection);
       const folderPath = stripSlashes(/** @type {string} */ (folder));
 
       const {
@@ -92,13 +92,16 @@ export const getEntryCollectionFolders = ({ collections }) =>
 
 /**
  * Get file collection folders.
- * @param {InternalSiteConfig} config Site configuration.
+ * @param {InternalCmsConfig} config CMS configuration.
  * @returns {EntryFolderInfo[]} Entry folders.
  */
 export const getFileCollectionFolders = ({ collections }) =>
   getValidCollections({ collections, type: 'file', visible: true })
     .map((collection) =>
-      (collection.files ?? []).map((file) => getCollectionFileFolder(collection, file)),
+      // prettier-ignore
+      (/** @type {FileCollection} */ (collection).files ?? []).map((file) =>
+        getCollectionFileFolder(collection, file),
+      ),
     )
     .flat(1)
     .filter((file) => !!file)
@@ -106,7 +109,7 @@ export const getFileCollectionFolders = ({ collections }) =>
 
 /**
  * Get singleton collection folders.
- * @param {InternalSiteConfig} config Site configuration.
+ * @param {InternalCmsConfig} config CMS configuration.
  * @returns {EntryFolderInfo[]} Entry folders.
  */
 export const getSingletonCollectionFolders = ({ singletons }) => {
@@ -126,7 +129,7 @@ export const getSingletonCollectionFolders = ({ singletons }) => {
 
 /**
  * Get all entry folders.
- * @param {InternalSiteConfig} config Site configuration.
+ * @param {InternalCmsConfig} config CMS configuration.
  * @returns {EntryFolderInfo[]} Entry folders.
  */
 export const getAllEntryFolders = (config) => [

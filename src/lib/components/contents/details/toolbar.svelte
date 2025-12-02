@@ -64,6 +64,7 @@
   const isNew = $derived($entryDraft?.isNew ?? true);
   const isIndexFile = $derived($entryDraft?.isIndexFile ?? false);
   const collection = $derived($entryDraft?.collection);
+  const entryCollection = $derived(collection?._type === 'entry' ? collection : undefined);
   const collectionFile = $derived($entryDraft?.collectionFile);
   const originalEntry = $derived($entryDraft?.originalEntry);
   const { defaultLocale } = $derived((collectionFile ?? collection)?._i18n ?? DEFAULT_I18N_CONFIG);
@@ -164,7 +165,11 @@
     variant="ghost"
     label={$_('duplicate')}
     aria-label={$_('duplicate_entry')}
-    disabled={isIndexFile || collection?.create === false || !canCreateEntry(collection)}
+    disabled={isIndexFile ||
+      // @todo Enable duplication for Hugo’s page bundles = the `path` option. We need to duplicate
+      // assets along with the entry. @see https://github.com/sveltia/sveltia-cms/issues/526
+      !!entryCollection?.path ||
+      !canCreateEntry(collection)}
     onclick={() => {
       goto(`/collections/${collectionName}/new`, {
         replaceState: true,
@@ -178,7 +183,7 @@
     variant="ghost"
     label={$_('delete')}
     aria-label={$_('delete_entry')}
-    disabled={collection?.delete === false}
+    disabled={entryCollection?.delete === false}
     onclick={() => {
       showDeleteDialog = true;
     }}
@@ -240,7 +245,7 @@
         {/if}
         <MenuItem
           label={$_('edit_slug')}
-          disabled={!!collectionFile || isNew || isIndexFile || collection?.delete === false}
+          disabled={!!collectionFile || isNew || isIndexFile || entryCollection?.delete === false}
           onclick={() => {
             showEditSlugDialog = true;
           }}
@@ -326,10 +331,13 @@
 </Toast>
 
 <Toast id={$copyFromLocaleToast.id} bind:show={$copyFromLocaleToast.show}>
-  {@const { status, message, count, sourceLocale } = $copyFromLocaleToast}
+  {@const { status, message, count, sourceLanguage } = $copyFromLocaleToast}
   <Alert {status}>
     {$_(`editor.${message}`, {
-      values: { count, source: sourceLocale ? getLocaleLabel(sourceLocale) : '' },
+      values: {
+        count,
+        source: sourceLanguage ? (getLocaleLabel(sourceLanguage) ?? sourceLanguage) : '',
+      },
     })}
   </Alert>
 </Toast>
@@ -342,10 +350,7 @@
   okLabel={$_('delete')}
   onOk={async () => {
     if (originalEntry) {
-      await deleteEntries(
-        [originalEntry.id],
-        associatedAssets.map(({ path }) => path),
-      );
+      await deleteEntries([originalEntry], associatedAssets);
     }
 
     _goBack();

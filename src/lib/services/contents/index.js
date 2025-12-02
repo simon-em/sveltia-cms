@@ -4,25 +4,29 @@ import { getCollection } from '$lib/services/contents/collection';
 
 /**
  * @import { Writable } from 'svelte/store';
- * @import { Entry, EntryCollection, EntryFolderInfo } from '$lib/types/private';
+ * @import { Entry, EntryFolderInfo, InternalEntryCollection } from '$lib/types/private';
  */
 
 /**
  * @type {Writable<boolean>}
  */
 export const dataLoaded = writable(false);
+
 /**
  * @type {Writable<number | undefined>}
  */
 export const dataLoadedProgress = writable();
+
 /**
  * @type {Writable<EntryFolderInfo[]>}
  */
 export const allEntryFolders = writable([]);
+
 /**
  * @type {Writable<Entry[]>}
  */
 export const allEntries = writable([]);
+
 /**
  * @type {Writable<Error[]>}
  */
@@ -42,8 +46,8 @@ export const getEntryFoldersByPath = (path) =>
         return Object.values(filePathMap).includes(path);
       }
 
-      return /** @type {EntryCollection} */ (
+      return /** @type {InternalEntryCollection} */ (
         getCollection(collectionName)
       )?._file?.fullPathRegEx?.test(path);
     })
-    .sort((a, b) => b.folderPath?.localeCompare(a.folderPath ?? '') ?? 0);
+    .sort((a, b) => (b.folderPath ?? '').localeCompare(a.folderPath ?? ''));

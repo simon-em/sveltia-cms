@@ -2,7 +2,7 @@
 
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 
-import { groupEntries, parseGroupConfig, viewGroups } from './group';
+import { groupEntries, parseGroupConfig } from './group';
 
 // Mock all dependencies
 vi.mock('svelte-i18n', () => ({
@@ -412,6 +412,85 @@ describe('groupEntries', () => {
 
     expect(result).toEqual([]);
   });
+
+  test('should reverse groups when sorting is descending on the same field', async () => {
+    const { getRegex } = await import('$lib/services/utils/misc');
+
+    // @ts-ignore - Mock data for testing
+    const entries = [
+      {
+        id: 'entry1',
+        sha: 'sha1',
+        slug: 'slug1',
+        subPath: '',
+        locales: { en: { path: 'path1', slug: 'slug1', content: { date: '2023-01-01' } } },
+      },
+      {
+        id: 'entry2',
+        sha: 'sha2',
+        slug: 'slug2',
+        subPath: '',
+        locales: { en: { path: 'path2', slug: 'slug2', content: { date: '2024-01-01' } } },
+      },
+      {
+        id: 'entry3',
+        sha: 'sha3',
+        slug: 'slug3',
+        subPath: '',
+        locales: { en: { path: 'path3', slug: 'slug3', content: { date: '2022-01-01' } } },
+      },
+    ];
+
+    // @ts-ignore - Mock data for testing
+    const collection = {
+      _file: { format: 'frontmatter', extension: 'md', formatOptions: {} },
+      _i18n: {
+        i18nEnabled: false,
+        structure: 'single_file',
+        allLocales: ['en'],
+        initialLocales: ['en'],
+        defaultLocale: 'en',
+        locales: ['en'],
+        canonicalSlug: {},
+      },
+      name: 'posts',
+      label: 'Posts',
+      folder: 'content/posts',
+    };
+
+    // @ts-ignore - Mock parameter types
+    vi.mocked(getPropertyValue).mockImplementation(({ entry, key }) => {
+      if (key === 'date') {
+        return entry.locales.en.content.date;
+      }
+
+      return undefined;
+    });
+
+    // @ts-ignore - Mock parameter types
+    vi.mocked(getRegex).mockReturnValue(/^(\d{4})/);
+
+    // Mock currentView store to return descending sort on date field
+    vi.mocked(get).mockImplementation((store) => {
+      // For currentView store
+      if (store && typeof store === 'object' && 'subscribe' in store) {
+        return { sort: { key: 'date', order: 'descending' } };
+      }
+
+      // For translation function
+      return (key) => (key === 'other' ? 'Other' : key);
+    });
+
+    // @ts-ignore - Mock data for testing
+    const conditions = { field: 'date', pattern: '(\\d{4})' };
+    // @ts-ignore - Mock data for testing
+    const result = groupEntries(entries, collection, conditions);
+
+    // Groups should be reversed (descending order)
+    expect(result[0].name).toBe('2024');
+    expect(result[1].name).toBe('2023');
+    expect(result[2].name).toBe('2022');
+  });
 });
 
 describe('Test parseGroupConfig()', () => {
@@ -533,16 +612,106 @@ describe('Test parseGroupConfig()', () => {
   });
 });
 
-describe('Test viewGroups store', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
+describe('initializeViewGroups', () => {
+  test('calls set with empty array when collection is undefined', async () => {
+    const { initializeViewGroups } = await import('./group');
+    const mockSet = vi.fn();
+
+    initializeViewGroups(undefined, mockSet);
+
+    expect(mockSet).toHaveBeenCalledWith([]);
   });
 
-  test('viewGroups store is defined and exported', () => {
-    expect(viewGroups).toBeDefined();
+  test('calls set with empty array for file collection', async () => {
+    const { initializeViewGroups } = await import('./group');
+    const mockSet = vi.fn();
+
+    const fileCollection = /** @type {any} */ ({
+      name: 'pages',
+      _type: 'file',
+      files: [],
+      _fileMap: {},
+    });
+
+    initializeViewGroups(fileCollection, mockSet);
+
+    expect(mockSet).toHaveBeenCalledWith([]);
   });
 
-  // Note: Full store testing requires more complex mocking of Svelte's derived store
-  // and would typically be done in integration tests or with testing utilities
-  // that can properly handle Svelte store reactivity
+  test('processes and sets groups for entry collection', async () => {
+    const { initializeViewGroups } = await import('./group');
+    const { currentView } = await import('$lib/services/contents/collection/view');
+    const mockSet = vi.fn();
+
+    vi.mocked(currentView).update = vi.fn();
+
+    const entryCollection = /** @type {any} */ ({
+      name: 'posts',
+      _type: 'entry',
+      folder: 'content/posts',
+      view_groups: [
+        { field: 'author', pattern: 'john', name: 'john' },
+        { field: 'status', pattern: 'draft', name: 'draft' },
+      ],
+    });
+
+    initializeViewGroups(entryCollection, mockSet);
+
+    expect(mockSet).toHaveBeenCalledWith([
+      { field: 'author', pattern: 'john', name: 'john' },
+      { field: 'status', pattern: 'draft', name: 'draft' },
+    ]);
+
+    expect(vi.mocked(currentView).update).toHaveBeenCalled();
+  });
+
+  test('handles entry collection with no view_groups', async () => {
+    const { initializeViewGroups } = await import('./group');
+    const { currentView } = await import('$lib/services/contents/collection/view');
+    const mockSet = vi.fn();
+
+    vi.mocked(currentView).update = vi.fn();
+
+    const entryCollection = /** @type {any} */ ({
+      name: 'posts',
+      _type: 'entry',
+      folder: 'content/posts',
+    });
+
+    initializeViewGroups(entryCollection, mockSet);
+
+    expect(mockSet).toHaveBeenCalledWith([]);
+
+    expect(vi.mocked(currentView).update).toHaveBeenCalled();
+  });
+
+  test('handles entry collection with view_groups object format', async () => {
+    const { initializeViewGroups } = await import('./group');
+    const { currentView } = await import('$lib/services/contents/collection/view');
+    const mockSet = vi.fn();
+
+    vi.mocked(currentView).update = vi.fn();
+
+    const entryCollection = /** @type {any} */ ({
+      name: 'posts',
+      _type: 'entry',
+      folder: 'content/posts',
+      view_groups: {
+        groups: [
+          { field: 'author', pattern: 'john', name: 'john' },
+          { field: 'status', pattern: 'draft', name: 'draft' },
+        ],
+        default: 'john',
+      },
+    });
+
+    initializeViewGroups(entryCollection, mockSet);
+
+    expect(mockSet).toHaveBeenCalledWith([
+      { field: 'author', pattern: 'john', name: 'john' },
+      { field: 'status', pattern: 'draft', name: 'draft' },
+    ]);
+
+    expect(vi.mocked(currentView).update).toHaveBeenCalled();
+  });
 });

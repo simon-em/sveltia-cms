@@ -2,12 +2,8 @@ import { escapeRegExp } from '@sveltia/utils/string';
 import { get } from 'svelte/store';
 
 import { entryDraft } from '$lib/services/contents/draft';
-import { getField, isFieldRequired } from '$lib/services/contents/entry/fields';
-import {
-  MEDIA_WIDGETS,
-  MIN_MAX_VALUE_WIDGETS,
-  MULTI_VALUE_WIDGETS,
-} from '$lib/services/contents/widgets';
+import { getField, isFieldMultiple, isFieldRequired } from '$lib/services/contents/entry/fields';
+import { MEDIA_WIDGETS, MIN_MAX_VALUE_WIDGETS } from '$lib/services/contents/widgets';
 import { getPairs } from '$lib/services/contents/widgets/key-value/helper';
 import { getListFieldInfo } from '$lib/services/contents/widgets/list/helper';
 import { COMPONENT_NAME_PREFIX_REGEX } from '$lib/services/contents/widgets/markdown';
@@ -30,7 +26,6 @@ import { getRegex } from '$lib/services/utils/misc';
  * ListField,
  * LocaleCode,
  * MinMaxValueField,
- * MultiValueField,
  * NumberField,
  * StringField,
  * TextField,
@@ -51,14 +46,16 @@ import { getRegex } from '$lib/services/utils/misc';
 /**
  * Regular expression to match the list key path, e.g. `field.0`, `field.1`, etc.
  * @type {RegExp}
+ * @internal
  */
-const LIST_KEY_PATH_REGEX = /\.\d+$/;
+export const LIST_KEY_PATH_REGEX = /\.\d+$/;
 
 /**
  * Default validity state for a field.
  * @type {EntryValidityState}
+ * @internal
  */
-const DEFAULT_VALIDITY = {
+export const DEFAULT_VALIDITY = {
   valueMissing: false,
   tooShort: false,
   tooLong: false,
@@ -68,7 +65,11 @@ const DEFAULT_VALIDITY = {
   typeMismatch: false,
 };
 
-const validityProxyHandler = {
+/**
+ * Proxy handler for validity state. Exported for testing only.
+ * @internal
+ */
+export const validityProxyHandler = {
   /**
    * Proxy getter.
    * @param {EntryValidityState} obj Object itself.
@@ -80,19 +81,15 @@ const validityProxyHandler = {
 
 /**
  * Validate each field.
- * @param {object} args Arguments.
- * @param {EntryDraft} args.draft Entry draft.
- * @param {LocaleCode} args.locale Current locale.
- * @param {FlattenedEntryContent} args.valueMap Entry values.
- * @param {string} args.keyPath Field key path.
- * @param {any} args.value Field value.
- * @param {string} [args.componentName] Markdown editor component name.
+ * @internal
+ * @param {ValidateFieldArgs} args Arguments.
  * @returns {EntryValidityState | undefined} Field validity.
  * @todo Refactor this function to reduce complexity and improve readability.
  */
-const validateAnyField = ({ draft, locale, valueMap, keyPath, value, componentName }) => {
-  const { collection, collectionName, fileName, collectionFile, files, validities, isIndexFile } =
-    draft;
+export const validateAnyField = (args) => {
+  const { draft, locale, valueMap, componentName, validities } = args;
+  const { collection, collectionName, fileName, collectionFile, files, isIndexFile } = draft;
+  let { keyPath, value } = args;
 
   /** @type {GetFieldArgs} */
   const getFieldArgs = {
@@ -110,11 +107,9 @@ const validateAnyField = ({ draft, locale, valueMap, keyPath, value, componentNa
     return undefined;
   }
 
+  // @ts-ignore Some field types don’t have `pattern` property
   const { widget: widgetName = 'string', i18n = false, pattern: validation } = fieldConfig;
-
-  const { multiple = false } = /** @type {MultiValueField} */ (
-    MULTI_VALUE_WIDGETS.includes(widgetName) ? fieldConfig : {}
-  );
+  const multiple = isFieldMultiple(fieldConfig);
 
   const { min = 0, max = Infinity } = /** @type {MinMaxValueField} */ (
     MIN_MAX_VALUE_WIDGETS.includes(widgetName) ? fieldConfig : {}
@@ -300,10 +295,11 @@ const validateAnyField = ({ draft, locale, valueMap, keyPath, value, componentNa
 
 /**
  * Validate a single field and update the validity state.
+ * @internal
  * @param {ValidateFieldArgs} args Arguments.
  * @returns {boolean} Whether the field is valid.
  */
-const validateField = (args) => {
+export const validateField = (args) => {
   const { validities, locale, keyPath } = args;
   const validity = validateAnyField(args);
   let valid = true;
@@ -321,19 +317,15 @@ const validateField = (args) => {
 
 /**
  * Validate an array-type field.
+ * @internal
  * @param {object} args Arguments.
  * @param {Field} args.fieldConfig Field configuration.
  * @param {ValidateFieldArgs} args.validateArgs Arguments for field validation.
  * @returns {{ valid: boolean, validateItems: boolean }} Validation result.
  */
-const validateList = ({ fieldConfig, validateArgs }) => {
+export const validateList = ({ fieldConfig, validateArgs }) => {
   const { validities, locale, keyPath } = validateArgs;
-  let valid = true;
-
-  if (!(keyPath in validities[locale])) {
-    valid = validateField(validateArgs);
-  }
-
+  const valid = validities[locale][keyPath]?.valid ?? validateField(validateArgs);
   const { widget: widgetName = 'string' } = fieldConfig;
 
   if (widgetName === 'list') {
@@ -343,11 +335,7 @@ const validateList = ({ fieldConfig, validateArgs }) => {
     }
   }
 
-  const { multiple = false } = /** @type {MultiValueField} */ (
-    MULTI_VALUE_WIDGETS.includes(widgetName) ? fieldConfig : {}
-  );
-
-  if (multiple) {
+  if (isFieldMultiple(fieldConfig)) {
     // Same as a simple list field, so we don’t need to validate items
     return { valid, validateItems: false };
   }
@@ -435,9 +423,10 @@ export const validateFields = (valueStoreKey) => {
 /**
  * Validate the slugs and return the results. At this time, we only check if the slug is empty
  * when the slug editor is shown. A pattern check can be added later if needed.
+ * @internal
  * @returns {{ valid: boolean, validities: LocaleValidityMap }} Validation results.
  */
-const validateSlugs = () => {
+export const validateSlugs = () => {
   const { currentSlugs, slugEditor } = /** @type {EntryDraft} */ (get(entryDraft));
   /** @type {LocaleValidityMap} */
   const validities = {};

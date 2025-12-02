@@ -101,7 +101,7 @@ describe('Test getEntryPreviewURL()', () => {
 
   test('returns undefined when show_preview_links is false', async () => {
     // @ts-ignore
-    (await import('$lib/services/config')).siteConfig = writable({
+    (await import('$lib/services/config')).cmsConfig = writable({
       show_preview_links: false,
       _baseURL: 'https://example.com',
     });
@@ -113,7 +113,7 @@ describe('Test getEntryPreviewURL()', () => {
 
   test('returns undefined when baseURL is missing', async () => {
     // @ts-ignore
-    (await import('$lib/services/config')).siteConfig = writable({
+    (await import('$lib/services/config')).cmsConfig = writable({
       show_preview_links: true,
     });
 
@@ -124,7 +124,7 @@ describe('Test getEntryPreviewURL()', () => {
 
   test('returns undefined when entry locale does not exist', async () => {
     // @ts-ignore
-    (await import('$lib/services/config')).siteConfig = writable({
+    (await import('$lib/services/config')).cmsConfig = writable({
       show_preview_links: true,
       _baseURL: 'https://example.com',
     });
@@ -136,7 +136,7 @@ describe('Test getEntryPreviewURL()', () => {
 
   test('returns undefined when preview_path is missing', async () => {
     // @ts-ignore
-    (await import('$lib/services/config')).siteConfig = writable({
+    (await import('$lib/services/config')).cmsConfig = writable({
       show_preview_links: true,
       _baseURL: 'https://example.com',
     });
@@ -152,7 +152,7 @@ describe('Test getEntryPreviewURL()', () => {
 
   test('generates basic preview URL with slug', async () => {
     // @ts-ignore
-    (await import('$lib/services/config')).siteConfig = writable({
+    (await import('$lib/services/config')).cmsConfig = writable({
       show_preview_links: true,
       _baseURL: 'https://example.com',
     });
@@ -187,7 +187,7 @@ describe('Test getEntryPreviewURL()', () => {
 
   test('handles baseURL with trailing slash', async () => {
     // @ts-ignore
-    (await import('$lib/services/config')).siteConfig = writable({
+    (await import('$lib/services/config')).cmsConfig = writable({
       show_preview_links: true,
       _baseURL: 'https://example.com/',
     });
@@ -209,7 +209,7 @@ describe('Test getEntryPreviewURL()', () => {
 
   test('handles path with leading slash', async () => {
     // @ts-ignore
-    (await import('$lib/services/config')).siteConfig = writable({
+    (await import('$lib/services/config')).cmsConfig = writable({
       show_preview_links: true,
       _baseURL: 'https://example.com',
     });
@@ -231,7 +231,7 @@ describe('Test getEntryPreviewURL()', () => {
 
   test('works with different locales', async () => {
     // @ts-ignore
-    (await import('$lib/services/config')).siteConfig = writable({
+    (await import('$lib/services/config')).cmsConfig = writable({
       show_preview_links: true,
       _baseURL: 'https://example.com',
     });
@@ -261,7 +261,7 @@ describe('Test getEntryPreviewURL()', () => {
 
   test('handles datetime fields in preview path template', async () => {
     // @ts-ignore
-    (await import('$lib/services/config')).siteConfig = writable({
+    (await import('$lib/services/config')).cmsConfig = writable({
       show_preview_links: true,
       _baseURL: 'https://example.com',
     });
@@ -298,7 +298,7 @@ describe('Test getEntryPreviewURL()', () => {
 
   test('handles specific datetime field in preview path', async () => {
     // @ts-ignore
-    (await import('$lib/services/config')).siteConfig = writable({
+    (await import('$lib/services/config')).cmsConfig = writable({
       show_preview_links: true,
       _baseURL: 'https://example.com',
     });
@@ -357,7 +357,7 @@ describe('Test getEntryPreviewURL()', () => {
 
   test('returns undefined when datetime field is missing but required in template', async () => {
     // @ts-ignore
-    (await import('$lib/services/config')).siteConfig = writable({
+    (await import('$lib/services/config')).cmsConfig = writable({
       show_preview_links: true,
       _baseURL: 'https://example.com',
     });
@@ -387,7 +387,7 @@ describe('Test getEntryPreviewURL()', () => {
 
   test('handles UTC datetime fields', async () => {
     // @ts-ignore
-    (await import('$lib/services/config')).siteConfig = writable({
+    (await import('$lib/services/config')).cmsConfig = writable({
       show_preview_links: true,
       _baseURL: 'https://example.com',
     });
@@ -426,7 +426,7 @@ describe('Test getEntryPreviewURL()', () => {
 
   test('handles _index slug files correctly (omits _index from URL)', async () => {
     // @ts-ignore
-    (await import('$lib/services/config')).siteConfig = writable({
+    (await import('$lib/services/config')).cmsConfig = writable({
       show_preview_links: true,
       _baseURL: 'https://example.com',
     });
@@ -448,9 +448,8 @@ describe('Test getEntryPreviewURL()', () => {
     };
 
     // Mock index file functions
-    const { isCollectionIndexFile, getIndexFile } = await import(
-      '$lib/services/contents/collection/index-file'
-    );
+    const { isCollectionIndexFile, getIndexFile } =
+      await import('$lib/services/contents/collection/index-file');
 
     vi.mocked(isCollectionIndexFile).mockReturnValue(true);
     vi.mocked(getIndexFile).mockReturnValue({
@@ -476,7 +475,7 @@ describe('Test getEntryPreviewURL()', () => {
 
   test('works with collection files', async () => {
     // @ts-ignore
-    (await import('$lib/services/config')).siteConfig = writable({
+    (await import('$lib/services/config')).cmsConfig = writable({
       show_preview_links: true,
       _baseURL: 'https://example.com',
     });
@@ -539,7 +538,7 @@ describe('Test getEntryPreviewURL()', () => {
 
   test('returns undefined when fillTemplate throws error', async () => {
     // @ts-ignore
-    (await import('$lib/services/config')).siteConfig = writable({
+    (await import('$lib/services/config')).cmsConfig = writable({
       show_preview_links: true,
       _baseURL: 'https://example.com',
     });
@@ -563,7 +562,7 @@ describe('Test getEntryPreviewURL()', () => {
 
   test('handles empty content object', async () => {
     // @ts-ignore
-    (await import('$lib/services/config')).siteConfig = writable({
+    (await import('$lib/services/config')).cmsConfig = writable({
       show_preview_links: true,
       _baseURL: 'https://example.com',
     });
@@ -595,7 +594,7 @@ describe('Test getEntryPreviewURL()', () => {
 
   test('uses default show_preview_links when not explicitly set', async () => {
     // @ts-ignore
-    (await import('$lib/services/config')).siteConfig = writable({
+    (await import('$lib/services/config')).cmsConfig = writable({
       _baseURL: 'https://example.com',
       // show_preview_links not set, should default to true
     });
@@ -613,6 +612,22 @@ describe('Test getEntryPreviewURL()', () => {
     const result = getEntryPreviewURL(mockEntry, 'en', mockCollection);
 
     expect(result).toBe('https://example.com/posts/test-entry');
+  });
+
+  test('handles null cmsConfig by using empty object fallback (line 84)', async () => {
+    // @ts-ignore - Set cmsConfig to null to test the ?? {} fallback
+    (await import('$lib/services/config')).cmsConfig = writable(null);
+
+    // Mock index file functions
+    const { isCollectionIndexFile } = await import('$lib/services/contents/collection/index-file');
+
+    vi.mocked(isCollectionIndexFile).mockReturnValue(false);
+
+    // When cmsConfig is null, show_preview_links defaults to true but _baseURL is undefined
+    // This should return undefined because baseURL will be undefined
+    const result = getEntryPreviewURL(mockEntry, 'en', mockCollection);
+
+    expect(result).toBeUndefined();
   });
 });
 

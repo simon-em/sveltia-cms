@@ -1,6 +1,9 @@
 import { describe, expect, test, vi } from 'vitest';
 
 import {
+  createPath,
+  createPathRegEx,
+  decodeFilePath,
   encodeFilePath,
   formatFileName,
   formatSize,
@@ -40,7 +43,7 @@ vi.mock('svelte-i18n', () => ({
   locale: () => 'en',
   /**
    * Translation function store.
-   * @returns {Function} Translation function.
+   * @returns {import('vitest').Mock} Translation function.
    */
   _: () => vi.fn((key, options) => `${key}(${options?.values?.size || ''})`),
   addMessages: vi.fn(),
@@ -58,6 +61,17 @@ describe('Test encodeFilePath()', () => {
   });
 });
 
+describe('Test decodeFilePath()', () => {
+  test('Decode', () => {
+    expect(decodeFilePath('/public/uploads/French%20Hotdog%281%29.jpg')).toEqual(
+      '/public/uploads/French Hotdog(1).jpg',
+    );
+    expect(decodeFilePath('@assets/images/%E7%A7%81%E3%81%AE%E7%94%BB%E5%83%8F.jpg')).toEqual(
+      '@assets/images/私の画像.jpg',
+    );
+  });
+});
+
 describe('Test formatFileName()', () => {
   test('Basic sanitization without slugification', () => {
     // Test basic filename sanitization
@@ -71,6 +85,25 @@ describe('Test formatFileName()', () => {
     // Test unicode normalization
     expect(formatFileName('café.jpg')).toEqual('café.jpg');
     expect(formatFileName('résumé.pdf')).toEqual('résumé.pdf');
+
+    // Test whitespace normalization - all whitespace characters replaced with regular spaces
+    // Consecutive whitespace is collapsed to a single space
+    // U+00A0: non-breaking space
+    expect(formatFileName('my\u00A0file.jpg')).toEqual('my file.jpg');
+    expect(formatFileName('test\u00A0\u00A0multiple.txt')).toEqual('test multiple.txt');
+    // U+202F: narrow no-break space (used by macOS in screenshot timestamps)
+    expect(formatFileName('Screenshot 2025-10-02 at 6.01.11\u202FPM.png')).toEqual(
+      'Screenshot 2025-10-02 at 6.01.11 PM.png',
+    );
+    // Tab character
+    expect(formatFileName('my\tfile.jpg')).toEqual('my file.jpg');
+    // Newline characters (edge case - gets replaced with space)
+    expect(formatFileName('my\nfile.jpg')).toEqual('my file.jpg');
+    expect(formatFileName('my\r\nfile.jpg')).toEqual('my file.jpg');
+    // Multiple consecutive spaces collapsed
+    expect(formatFileName('my   file.jpg')).toEqual('my file.jpg');
+    expect(formatFileName('test\t\t\tfile.txt')).toEqual('test file.txt');
+    expect(formatFileName('mixed\u00A0 \t\u202Fspaces.pdf')).toEqual('mixed spaces.pdf');
   });
 
   test('Slugification when enabled', () => {
@@ -104,6 +137,11 @@ describe('Test formatFileName()', () => {
 
     // Test with empty array
     expect(formatFileName('test.jpg', { assetNamesInSameFolder: [] })).toEqual('test.jpg');
+
+    // Test when only base name exists (no numbered suffix) - should create test-1.jpg
+    expect(formatFileName('test.jpg', { assetNamesInSameFolder: ['test.jpg'] })).toEqual(
+      'test-1.jpg',
+    );
   });
 
   test('Combined slugification and duplicate handling', () => {
@@ -458,5 +496,111 @@ describe('Test resolvePath()', () => {
     // createPath filters out empty segments, so // becomes single /
     expect(resolvePath('folder//file.txt')).toBe('folder/file.txt');
     expect(resolvePath('//folder/file.txt')).toBe('folder/file.txt'); // Leading empty segments are filtered
+  });
+
+  test('should handle dots after all segments are removed', () => {
+    // When .. is encountered but no named segment exists before it (after first segment)
+    // This tests the case where lastIndex === -1 inside the .. handling
+    expect(resolvePath('file.txt/../..')).toBe(''); // .. after removing file.txt finds no segment
+    expect(resolvePath('a/file.txt/../../..')).toBe(''); // Going back 3 times removes all segments
+    expect(resolvePath('a/b/file.txt/../..')).toBe('a'); // Going back twice: removes file.txt then b, a remains
+    // Case where segment exists after going back
+    expect(resolvePath('a/b/c/../../file.txt')).toBe('a/file.txt'); // Go back twice, then file.txt at same level
+  });
+});
+
+describe('Test createPath()', () => {
+  test('should join valid path segments', () => {
+    expect(createPath(['folder', 'subfolder', 'file.txt'])).toBe('folder/subfolder/file.txt');
+    expect(createPath(['a', 'b', 'c'])).toBe('a/b/c');
+  });
+
+  test('should filter out null and undefined values', () => {
+    expect(createPath(['folder', null, 'file.txt'])).toBe('folder/file.txt');
+    expect(createPath(['folder', undefined, 'file.txt'])).toBe('folder/file.txt');
+    expect(createPath([null, 'folder', undefined, 'file.txt'])).toBe('folder/file.txt');
+  });
+
+  test('should filter out empty strings', () => {
+    expect(createPath(['folder', '', 'file.txt'])).toBe('folder/file.txt');
+    expect(createPath(['', 'folder', '', 'file.txt', ''])).toBe('folder/file.txt');
+  });
+
+  test('should handle all falsy values', () => {
+    expect(createPath([null, undefined, '', 'folder', 'file.txt'])).toBe('folder/file.txt');
+  });
+
+  test('should handle empty array', () => {
+    expect(createPath([])).toBe('');
+  });
+
+  test('should handle array with only falsy values', () => {
+    expect(createPath([null, undefined, ''])).toBe('');
+  });
+});
+
+describe('Test createPathRegEx()', () => {
+  test('should create regex for simple path', () => {
+    const regex = createPathRegEx('folder/file.txt', (segment) => segment);
+
+    expect(regex.test('folder/file.txt')).toBe(true);
+    expect(regex.test('folder/file.txt ')).toBe(true); // \b allows whitespace after
+    expect(regex.test('other/file.txt')).toBe(false);
+  });
+
+  test('should apply replacer function to each segment', () => {
+    const regex = createPathRegEx('folder/{{slug}}/file.txt', (segment) =>
+      segment.replace(/{{.+?}}/, '.+?'),
+    );
+
+    expect(regex.test('folder/my-slug/file.txt')).toBe(true);
+    expect(regex.test('folder/another-slug/file.txt')).toBe(true);
+    expect(regex.test('other/my-slug/file.txt')).toBe(false);
+  });
+
+  test('should not escape special regex characters by default', () => {
+    // The replacer is responsible for escaping - the function itself doesn't escape
+    const regex = createPathRegEx('folder/file.txt', (segment) => segment);
+
+    // Without escaping in the replacer, the dot matches any character
+    expect(regex.test('folder/file.txt')).toBe(true);
+    expect(regex.test('folder/fileXtxt')).toBe(true); // Dot matches X
+  });
+
+  test('should support escaping when replacer escapes', () => {
+    const regex = createPathRegEx('folder/file.txt', (segment) =>
+      segment.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
+    );
+
+    // With escaping, dot only matches literal dot
+    expect(regex.test('folder/file.txt')).toBe(true);
+    expect(regex.test('folder/fileXtxt')).toBe(false);
+  });
+
+  test('should use word boundary at the end', () => {
+    const regex = createPathRegEx('folder/prefix', (segment) => segment);
+
+    expect(regex.test('folder/prefix')).toBe(true);
+    expect(regex.test('folder/prefix-more')).toBe(true); // Word boundary allows this
+    expect(regex.test('folder/prefixabc')).toBe(false); // No word boundary between x and a
+    expect(regex.test('other/prefix')).toBe(false);
+  });
+
+  test('should handle multiple template tags', () => {
+    const regex = createPathRegEx('{{year}}/{{month}}/{{slug}}.md', (segment) =>
+      segment.replace(/{{.+?}}/, '.+?'),
+    );
+
+    expect(regex.test('2024/01/my-post.md')).toBe(true);
+    expect(regex.test('2024/12/another-post.md')).toBe(true);
+    expect(regex.test('2024/01')).toBe(false);
+  });
+
+  test('should handle paths with multiple segments', () => {
+    const regex = createPathRegEx('a/b/c/d/e', (segment) => segment);
+
+    expect(regex.test('a/b/c/d/e')).toBe(true);
+    expect(regex.test('a/b/c/d/e/f')).toBe(true);
+    expect(regex.test('a/b/c/d')).toBe(false);
   });
 });

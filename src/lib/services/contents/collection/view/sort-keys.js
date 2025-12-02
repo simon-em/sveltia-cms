@@ -12,7 +12,7 @@ import { getField } from '$lib/services/contents/entry/fields';
 
 /**
  * @import { Readable } from 'svelte/store';
- * @import { EntryCollection, SortingConditions, SortOrder } from '$lib/types/private';
+ * @import { InternalEntryCollection, SortingConditions, SortOrder } from '$lib/types/private';
  * @import { Field, FieldKeyPath, NumberField, SortableFields } from '$lib/types/public';
  */
 
@@ -43,7 +43,7 @@ export const SPECIAL_SORT_KEYS = Object.keys(SPECIAL_SORT_KEY_TYPES);
 /**
  * Check if the given value is a valid array of strings.
  * @param {unknown} arr Value to check.
- * @returns {boolean} Whether the value is a valid array of strings.
+ * @returns {arr is string[]} Whether the value is a valid array of strings.
  */
 export const isValidArray = (arr) =>
   Array.isArray(arr) && arr.every((item) => typeof item === 'string');
@@ -58,21 +58,19 @@ export const parseCustomSortableFields = (customSortableFields) => {
   // Netlify/Decap CMS compatibility: if `sortable_fields` is an array, it should be treated as a
   // list of field keys
   if (isValidArray(customSortableFields)) {
-    return { keys: /** @type {string[]} */ (customSortableFields) };
+    return { keys: customSortableFields };
   }
 
   // Static CMS compatibility: if `sortable_fields` is an object, it should be treated as a
   // definition object with `fields` and `default` properties
   if (isObject(customSortableFields)) {
-    const { fields: keys, default: settings } = /** @type {SortableFields} */ (
-      customSortableFields
-    );
+    const { fields: keys, default: settings } = customSortableFields;
 
     if (!isValidArray(keys)) {
       return { keys: [] };
     }
 
-    if (!settings || !isObject(settings)) {
+    if (!isObject(settings)) {
       return { keys };
     }
 
@@ -114,7 +112,7 @@ export const getDefaultSortKeys = (customIdField) => {
 /**
  * Get sort configuration for the given collection.
  * @param {object} args Arguments.
- * @param {EntryCollection} args.collection Collection.
+ * @param {InternalEntryCollection} args.collection Collection.
  * @param {boolean} args.isCommitAuthorAvailable Whether the entries in the collection have a commit
  * author. Available for some Git-based backends.
  * @param {boolean} args.isCommitDateAvailable Whether the entries in the collection have a commit
@@ -201,7 +199,7 @@ export const getSortKeyType = ({ key, fieldConfig }) => {
 /**
  * Get a field’s label by key.
  * @param {object} args Arguments.
- * @param {EntryCollection} args.collection Collection.
+ * @param {InternalEntryCollection} args.collection Collection.
  * @param {FieldKeyPath | string} args.key Field key path or one of other entry metadata property
  * keys: `slug`, `commit_author` and `commit_date`.
  * @returns {string} Label. For a nested field, it would be something like `Name – English`.
@@ -221,12 +219,14 @@ export const getSortKeyLabel = ({ collection, key }) => {
 
         const keyPath = arr.slice(0, index + 1).join('.');
 
+        // @ts-ignore Hidden field doesn't have `label` property
         return getField({ collectionName: collection.name, keyPath })?.label || _key;
       })
       .filter(Boolean)
       .join(' – ');
   }
 
+  // @ts-ignore Hidden field doesn't have `label` property
   return collection.fields?.find(({ name }) => name === key)?.label || key;
 };
 
@@ -237,15 +237,14 @@ export const getSortKeyLabel = ({ collection, key }) => {
 export const sortKeys = derived(
   // Include `appLocale` as a dependency because `getSortKeyLabel()` may return a localized label
   [selectedCollection, allEntries, appLocale],
-  ([_collection, _allEntries], set) => {
+  ([collection, _allEntries], set) => {
     // Disable sorting for file/singleton collection
-    if (!_collection?.folder) {
+    if (!collection || !('folder' in collection)) {
       set([]);
 
       return;
     }
 
-    const collection = /** @type {EntryCollection} */ (_collection);
     const view = get(entryListSettings)?.[collection.name] ?? { type: 'list' };
 
     const { keys, default: defaultSort } = getSortConfig({

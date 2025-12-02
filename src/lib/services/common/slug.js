@@ -2,10 +2,10 @@ import transliterate from '@sindresorhus/transliterate';
 import { generateUUID } from '@sveltia/utils/crypto';
 import { get } from 'svelte/store';
 
-import { siteConfig } from '$lib/services/config';
+import { cmsConfig } from '$lib/services/config';
 
 /**
- * @import { InternalSiteConfig } from '$lib/types/private';
+ * @import { InternalCmsConfig } from '$lib/types/private';
  */
 
 /**
@@ -26,17 +26,14 @@ export const slugify = (string, { fallback = true } = {}) => {
       sanitize_replacement: sanitizeReplacement = '-',
       trim: trimReplacement = true,
     } = {},
-  } = /** @type {InternalSiteConfig} */ (get(siteConfig)) ?? {};
+  } = /** @type {InternalCmsConfig} */ (get(cmsConfig)) ?? {};
 
   let slug = string;
 
   if (cleanAccents) {
-    // Remove any accent after transliteration
+    // Remove any accented characters by transliterating them to their ASCII equivalents
     // @see https://www.npmjs.com/package/@sindresorhus/transliterate
-    // @see https://stackoverflow.com/q/990904
-    slug = transliterate(slug)
-      .normalize('NFD')
-      .replace(/\p{Diacritic}/gu, '');
+    slug = transliterate(slug.normalize('NFD'));
   }
 
   if (encoding === 'ascii') {

@@ -27,6 +27,7 @@ words:
   - camelcase
   - Cloudinary
   - cmaps
+  - cooldown
   - CVEs
   - danurbanowicz
   - Decap
@@ -35,8 +36,9 @@ words:
   - dialogs
   - dompurify
   - embeddable
+  - esbuild
   - exif
-  - exifreader
+  - exifr
   - Flavored
   - Forgejo
   - frontmatter
@@ -55,6 +57,7 @@ words:
   - keymap
   - keyvalue
   - kyoshino
+  - lvml
   - mdwn
   - messageformat
   - mkdn
@@ -66,6 +69,7 @@ words:
   - onwheelcapture
   - OPFS
   - oxlint
+  - parseable
   - passwordless
   - pexels
   - Photoshop
@@ -83,6 +87,7 @@ words:
   - proxify
   - qrcode
   - Ragdoll
+  - rearchitect
   - rebranded
   - reimagined
   - Roadmap
@@ -110,9 +115,11 @@ words:
   - unlocalized
   - unpatched
   - unproxify
+  - unsubscribers
   - Uploadcare
   - videoseries
   - Vite
+  - Vitest
   - WCAG
   - weba
   - webformat

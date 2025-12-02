@@ -12,9 +12,13 @@ export type LocaleCode = string;
  */
 export type FieldKeyPath = string;
 /**
+ * Cloud media library name.
+ */
+export type CloudMediaLibraryName = "cloudinary" | "uploadcare";
+/**
  * Supported media library name.
  */
-export type MediaLibraryName = "default" | "cloudinary" | "uploadcare" | "stock_assets";
+export type MediaLibraryName = "default" | CloudMediaLibraryName | "stock_assets";
 /**
  * Supported raster image format.
  */
@@ -112,6 +116,12 @@ export type FileTransformations = ImageTransformations;
  */
 export type DefaultMediaLibraryConfig = {
     /**
+     * Whether to allow multiple file selection in the media library.
+     * This option is available for compatibility with the Cloudinary and Uploadcare media libraries,
+     * but you can simply use the `multiple` option for the File/Image widgets instead.
+     */
+    multiple?: boolean;
+    /**
      * Maximum file size in bytes that can be accepted for uploading.
      */
     max_file_size?: number;
@@ -154,15 +164,12 @@ export type CloudinaryMediaLibrary = {
      */
     use_transformations?: boolean;
     /**
-     * Whether to use an HTTP URL. Default: `true`.
-     */
-    use_secure_url?: boolean;
-    /**
      * Options to be passed to Cloudinary, such as `multiple`.
      * The `cloud_name` and `api_key` options are required for the global `media_library` option. See
      * the [Cloudinary
      * documentation](https://cloudinary.com/documentation/media_library_widget#2_set_the_configuration_options)
-     * for a full list of available options.
+     * for a full list of available options. Some options, including `inline_container`, will be ignored
+     * in Sveltia CMS because we use an API-based integration instead of Cloudinary’s pre-built widget.
      */
     config?: Record<string, any>;
 };
@@ -189,7 +196,8 @@ export type UploadcareMediaLibrary = {
      * Options to be passed to Uploadcare, such as `multiple`.
      * The `publicKey` option is required for the global `media_library` option. See the [Uploadcare
      * documentation](https://uploadcare.com/docs/uploads/file-uploader-options/) for a full list of
-     * available options.
+     * available options. Some options, including `previewStep`, will be ignored in Sveltia CMS because
+     * we use an API-based integration instead of Uploadcare’s deprecated jQuery File Uploader.
      */
     config?: Record<string, any>;
     /**
@@ -241,13 +249,18 @@ export type MediaLibraries = {
     stock_assets?: StockAssetMediaLibrary;
 };
 /**
- * Base field properties that are common to all fields.
+ * Common field properties that are shared among all field types.
  */
-export type BaseFieldProps = {
+export type CommonFieldProps = {
     /**
      * Unique identifier for the field. It cannot include periods and spaces.
      */
     name: string;
+};
+/**
+ * Standard field properties for a built-in widget.
+ */
+export type StandardFieldProps = {
     /**
      * Label of the field to be displayed in the editor UI. Default: `name`
      * field value.
@@ -274,16 +287,6 @@ export type BaseFieldProps = {
      * when i18n is set up with the global and collection-level `i18n` option.
      */
     i18n?: boolean | "duplicate" | "translate" | "none";
-};
-/**
- * Common field properties. We have to allow arbitrary properties because custom widgets can have
- * any properties. This is also required to enable schema autocomplete for the fields in IDEs.
- */
-export type CommonFieldProps = BaseFieldProps & Record<string, any>;
-/**
- * Standard field properties for a built-in widget.
- */
-export type StandardFieldProps = {
     /**
      * Whether to make data input on the field required.
      * Default: `true`. This option also affects data output if the `omit_empty_optional_fields` global
@@ -296,10 +299,19 @@ export type StandardFieldProps = {
      * useful when a `default` value is provided and the field should not be editable by users.
      */
     readonly?: boolean;
+};
+/**
+ * Properties for a field that is visible in the editor UI.
+ */
+export type VisibleFieldProps = CommonFieldProps & StandardFieldProps;
+/**
+ * Field validation properties.
+ */
+export type FieldValidationProps = {
     /**
      * Validation format. The first argument is a
      * regular expression matching pattern for a valid input value, and the second argument is an error
-     * message. This option has no effect on a List or Object field with subfields.
+     * message to be displayed when the input value does not match the pattern.
      */
     pattern?: [string | RegExp, string];
 };
@@ -317,9 +329,25 @@ export type FieldMediaLibraryOptions = {
  */
 export type MediaFieldProps = {
     /**
-     * Default value. Accepts a file path or complete URL.
+     * Default value. Accepts a file path or complete URL. If
+     * the `multiple` option is set to `true`, it accepts an array of file paths or URLs.
      */
-    default?: string;
+    default?: string | string[];
+    /**
+     * Whether to allow multiple file selection for the field. Default:
+     * `false`.
+     */
+    multiple?: boolean;
+    /**
+     * Minimum number of files that can be selected. Ignored unless the
+     * `multiple` option is set to `true`. Default: `0`.
+     */
+    min?: number;
+    /**
+     * Maximum number of files that can be selected.  Ignored unless the
+     * `multiple` option is set to `true`. Default: `Infinity`.
+     */
+    max?: number;
     /**
      * File types that the field should accept. The value would be a
      * comma-separated list of unique file type specifiers, the format used for the HTML
@@ -352,11 +380,6 @@ export type MediaFieldProps = {
      * libraries. This overrides the global `media_libraries` option.
      */
     media_libraries?: MediaLibraries;
-    /**
-     * Whether to enable multiple item selection in an external
-     * media library. Default: `true`.
-     */
-    allow_multiple?: boolean;
 };
 /**
  * Options for a field accepting multiple values.
@@ -429,7 +452,7 @@ export type VariableFieldProps = {
     /**
      * Set of nested Object fields to be selected or added.
      */
-    types?: VariableFieldType[];
+    types: VariableFieldType[];
     /**
      * Property name to store the type name in nested objects. Default:
      * `type`.
@@ -482,7 +505,7 @@ export type BooleanFieldProps = {
 /**
  * Boolean field definition.
  */
-export type BooleanField = CommonFieldProps & StandardFieldProps & BooleanFieldProps & AdjacentLabelProps;
+export type BooleanField = VisibleFieldProps & BooleanFieldProps & AdjacentLabelProps;
 /**
  * Code field properties.
  */
@@ -523,7 +546,7 @@ export type CodeFieldProps = {
 /**
  * Code field definition.
  */
-export type CodeField = CommonFieldProps & StandardFieldProps & CodeFieldProps;
+export type CodeField = VisibleFieldProps & FieldValidationProps & CodeFieldProps;
 /**
  * Color field properties.
  */
@@ -550,7 +573,7 @@ export type ColorFieldProps = {
 /**
  * Color field definition.
  */
-export type ColorField = CommonFieldProps & StandardFieldProps & ColorFieldProps;
+export type ColorField = VisibleFieldProps & FieldValidationProps & ColorFieldProps;
 /**
  * Compute field properties.
  */
@@ -567,7 +590,7 @@ export type ComputeFieldProps = {
 /**
  * Compute field definition.
  */
-export type ComputeField = CommonFieldProps & StandardFieldProps & ComputeFieldProps;
+export type ComputeField = VisibleFieldProps & ComputeFieldProps;
 /**
  * DateTime field properties.
  */
@@ -608,7 +631,7 @@ export type DateTimeFieldProps = {
 /**
  * DateTime field definition.
  */
-export type DateTimeField = CommonFieldProps & StandardFieldProps & DateTimeFieldProps;
+export type DateTimeField = VisibleFieldProps & FieldValidationProps & DateTimeFieldProps;
 /**
  * File field properties.
  */
@@ -621,7 +644,7 @@ export type FileFieldProps = {
 /**
  * File field definition.
  */
-export type FileField = CommonFieldProps & StandardFieldProps & MediaFieldProps & FileFieldProps;
+export type FileField = VisibleFieldProps & FieldValidationProps & MediaFieldProps & FileFieldProps;
 /**
  * Hidden field properties.
  */
@@ -635,11 +658,19 @@ export type HiddenFieldProps = {
      * configured file format.
      */
     default?: any;
+    /**
+     * Whether to enable the field in locales other than the
+     * default. Unlike other visible fields, hidden fields can be configured to be enabled in
+     * non-default locales only when set to `duplicate`. In that case, the default locale’s value is
+     * automatically copied to other locales. Default: `false`. This option only works when i18n is set
+     * up with the global and collection-level `i18n` option.
+     */
+    i18n?: false | "duplicate";
 };
 /**
  * Hidden field definition.
  */
-export type HiddenField = CommonFieldProps & StandardFieldProps & HiddenFieldProps;
+export type HiddenField = CommonFieldProps & HiddenFieldProps;
 /**
  * Image field properties.
  */
@@ -652,7 +683,7 @@ export type ImageFieldProps = {
 /**
  * Image field definition.
  */
-export type ImageField = CommonFieldProps & StandardFieldProps & MediaFieldProps & ImageFieldProps;
+export type ImageField = VisibleFieldProps & FieldValidationProps & MediaFieldProps & ImageFieldProps;
 /**
  * KeyValue field properties compatible with Static CMS.
  */
@@ -677,7 +708,7 @@ export type KeyValueFieldProps = {
 /**
  * KeyValue field definition.
  */
-export type KeyValueField = CommonFieldProps & StandardFieldProps & KeyValueFieldProps & MultiValueFieldProps;
+export type KeyValueField = VisibleFieldProps & KeyValueFieldProps & MultiValueFieldProps;
 /**
  * List field properties.
  */
@@ -692,6 +723,19 @@ export type ListFieldProps = {
      * the document for details.
      */
     default?: string[] | Record<string, any>[] | Record<string, any>;
+};
+/**
+ * Base properties for a List field.
+ */
+export type ListFieldBaseProps = VisibleFieldProps & ListFieldProps & MultiValueFieldProps;
+/**
+ * Simple List field definition with primitive item types.
+ */
+export type SimpleListField = ListFieldBaseProps & FieldValidationProps;
+/**
+ * Base properties for a complex List field with subfields or variable types.
+ */
+export type ComplexListFieldBaseProps = {
     /**
      * Whether to allow users to add new items to the list. Default:
      * `true`.
@@ -722,6 +766,12 @@ export type ListFieldProps = {
      */
     summary?: string;
     /**
+     * Subfield name to be used as a thumbnail image for a list item. It
+     * will be displayed along with the summary label when the item is collapsed. The subfield must be
+     * an Image field. Default: none.
+     */
+    thumbnail?: string;
+    /**
      * Whether to collapse the list items by default. Default:
      * `false`. If set to `auto`, the UI is collapsed if the item has any filled subfields and expanded
      * if all the subfields are empty.
@@ -734,14 +784,6 @@ export type ListFieldProps = {
      */
     minimize_collapsed?: boolean | "auto";
     /**
-     * Single field to be included in a list item.
-     */
-    field?: Field;
-    /**
-     * Set of fields to be included in a list item.
-     */
-    fields?: Field[];
-    /**
      * Whether to save the field value at the top-level of the data file
      * without the field name. If the `single_file` i18n structure is enabled, the lists will still be
      * saved under locale keys. Default: `false`. See our
@@ -751,9 +793,47 @@ export type ListFieldProps = {
     root?: boolean;
 };
 /**
+ * Properties for a complex List field with subfields or variable types.
+ */
+export type ComplexListFieldProps = ListFieldBaseProps & ComplexListFieldBaseProps;
+/**
+ * Properties for a List field with a single subfield.
+ */
+export type ListFieldSubFieldProps = {
+    /**
+     * Single field to be included in a list item.
+     */
+    field: Field;
+};
+/**
+ * List field definition with a single subfield.
+ */
+export type ListFieldWithSubField = ComplexListFieldProps & ListFieldSubFieldProps;
+/**
+ * Properties for a List field with multiple subfields.
+ */
+export type ListFieldSubFieldsProps = {
+    /**
+     * Set of fields to be included in a list item.
+     */
+    fields: Field[];
+};
+/**
+ * List field definition with multiple subfields.
+ */
+export type ListFieldWithSubFields = ComplexListFieldProps & ListFieldSubFieldsProps;
+/**
+ * List field definition with variable types.
+ */
+export type ListFieldWithTypes = ComplexListFieldProps & VariableFieldProps;
+/**
+ * List field definition with complex items.
+ */
+export type ComplexListField = ListFieldWithSubField | ListFieldWithSubFields | ListFieldWithTypes;
+/**
  * List field definition.
  */
-export type ListField = CommonFieldProps & StandardFieldProps & ListFieldProps & MultiValueFieldProps & VariableFieldProps;
+export type ListField = SimpleListField | ListFieldWithSubField | ListFieldWithSubFields | ListFieldWithTypes;
 /**
  * Map field properties.
  */
@@ -780,11 +860,11 @@ export type MapFieldProps = {
 /**
  * Map field definition.
  */
-export type MapField = CommonFieldProps & StandardFieldProps & MapFieldProps;
+export type MapField = VisibleFieldProps & FieldValidationProps & MapFieldProps;
 /**
  * Supported button name for the rich text editor.
  */
-export type RichTextEditorButtonName = "bold" | "italic" | "code" | "link" | "heading-one" | "heading-two" | "heading-three" | "heading-four" | "heading-five" | "heading-six" | "quote" | "bulleted-list" | "numbered-list";
+export type RichTextEditorButtonName = "bold" | "italic" | "strikethrough" | "code" | "link" | "heading-one" | "heading-two" | "heading-three" | "heading-four" | "heading-five" | "heading-six" | "quote" | "bulleted-list" | "numbered-list";
 /**
  * Built-in editor component name for the rich text editor.
  */
@@ -844,7 +924,7 @@ export type MarkdownFieldProps = {
 /**
  * Markdown field definition.
  */
-export type MarkdownField = CommonFieldProps & StandardFieldProps & MarkdownFieldProps;
+export type MarkdownField = VisibleFieldProps & FieldValidationProps & MarkdownFieldProps;
 /**
  * Number field properties.
  */
@@ -877,7 +957,7 @@ export type NumberFieldProps = {
 /**
  * Number field definition.
  */
-export type NumberField = CommonFieldProps & StandardFieldProps & NumberFieldProps & AdjacentLabelProps;
+export type NumberField = VisibleFieldProps & FieldValidationProps & NumberFieldProps & AdjacentLabelProps;
 /**
  * Object field properties.
  */
@@ -900,15 +980,32 @@ export type ObjectFieldProps = {
      * Template of a label to be displayed on a collapsed object.
      */
     summary?: string;
+};
+/**
+ * Base properties for a complex Object field with subfields or variable types.
+ */
+export type ComplexObjectFieldProps = VisibleFieldProps & ObjectFieldProps;
+/**
+ * Properties for an Object field with multiple subfields.
+ */
+export type ObjectFieldSubFieldsProps = {
     /**
      * Set of fields to be included.
      */
     fields: Field[];
 };
 /**
+ * Object field definition with multiple subfields.
+ */
+export type ObjectFieldWithSubFields = ComplexObjectFieldProps & ObjectFieldSubFieldsProps;
+/**
+ * Object field definition with variable types.
+ */
+export type ObjectFieldWithTypes = ComplexObjectFieldProps & VariableFieldProps;
+/**
  * Object field definition.
  */
-export type ObjectField = CommonFieldProps & StandardFieldProps & ObjectFieldProps & VariableFieldProps;
+export type ObjectField = ObjectFieldWithSubFields | ObjectFieldWithTypes;
 /**
  * Entry filter options for a Relation field.
  */
@@ -970,7 +1067,11 @@ export type RelationFieldProps = {
 /**
  * Relation field definition.
  */
-export type RelationField = CommonFieldProps & StandardFieldProps & RelationFieldProps & MultiOptionFieldProps;
+export type RelationField = VisibleFieldProps & FieldValidationProps & RelationFieldProps & MultiOptionFieldProps;
+/**
+ * Select field option value.
+ */
+export type SelectFieldValue = string | number | null;
 /**
  * Select field properties.
  */
@@ -980,22 +1081,22 @@ export type SelectFieldProps = {
      */
     widget: "select";
     /**
-     * Default value(s), which should match the options. When
-     * `multiple` is `false`, it should be a single value that matches the `value` option.
+     * Default value that matches one of the
+     * options. When `multiple` is `true`, it should be an array of valid values.
      */
-    default?: any | any[];
+    default?: SelectFieldValue | SelectFieldValue[];
     /**
      * Options.
      */
-    options: string[] | {
+    options: SelectFieldValue[] | {
         label: string;
-        value: string;
+        value: SelectFieldValue;
     }[];
 };
 /**
  * Select field definition.
  */
-export type SelectField = CommonFieldProps & StandardFieldProps & SelectFieldProps & MultiOptionFieldProps;
+export type SelectField = VisibleFieldProps & FieldValidationProps & SelectFieldProps & MultiOptionFieldProps;
 /**
  * String field properties.
  */
@@ -1025,7 +1126,7 @@ export type StringFieldProps = {
 /**
  * String field definition.
  */
-export type StringField = CommonFieldProps & StandardFieldProps & StringFieldProps & AdjacentLabelProps & CharCountProps;
+export type StringField = VisibleFieldProps & FieldValidationProps & StringFieldProps & AdjacentLabelProps & CharCountProps;
 /**
  * Text field properties.
  */
@@ -1042,7 +1143,7 @@ export type TextFieldProps = {
 /**
  * Text field definition.
  */
-export type TextField = CommonFieldProps & StandardFieldProps & TextFieldProps & CharCountProps;
+export type TextField = VisibleFieldProps & FieldValidationProps & TextFieldProps & CharCountProps;
 /**
  * UUID field properties.
  */
@@ -1073,11 +1174,15 @@ export type UuidFieldProps = {
 /**
  * UUID field definition.
  */
-export type UuidField = CommonFieldProps & StandardFieldProps & UuidFieldProps;
+export type UuidField = VisibleFieldProps & UuidFieldProps;
+/**
+ * Visible field types.
+ */
+export type VisibleField = BooleanField | CodeField | ColorField | ComputeField | DateTimeField | FileField | ImageField | KeyValueField | ListField | MapField | MarkdownField | NumberField | ObjectField | RelationField | SelectField | StringField | TextField | UuidField;
 /**
  * Entry field using a built-in widget.
  */
-export type StandardField = BooleanField | CodeField | ColorField | ComputeField | DateTimeField | FileField | HiddenField | ImageField | KeyValueField | ListField | MapField | MarkdownField | NumberField | ObjectField | RelationField | SelectField | StringField | TextField | UuidField;
+export type StandardField = VisibleField | HiddenField;
 /**
  * Media field types.
  */
@@ -1091,6 +1196,14 @@ export type MultiValueField = MediaField | RelationField | SelectField;
  */
 export type MinMaxValueField = MultiValueField | ListField | NumberField;
 /**
+ * Field types that have subfields.
+ */
+export type FieldWithSubFields = ListFieldWithSubFields | ObjectFieldWithSubFields;
+/**
+ * Field types that support variable types.
+ */
+export type FieldWithTypes = ListFieldWithTypes | ObjectFieldWithTypes;
+/**
  * Name of a built-in widget. Sveltia CMS supports all the built-in widgets provided by Decap CMS as
  * well as some new widgets.
  */
@@ -1102,12 +1215,12 @@ export type CustomFieldProps = {
     /**
      * Widget name.
      */
-    widget: Exclude<string, BuiltInWidgetName>;
+    widget: Exclude<string, BuiltInWidgetName | "">;
 };
 /**
  * Entry field using a custom widget.
  */
-export type CustomField = CommonFieldProps & CustomFieldProps;
+export type CustomField = CommonFieldProps & CustomFieldProps & Record<string, any>;
 /**
  * Entry field.
  */
@@ -1246,9 +1359,9 @@ export type FileExtension = "yml" | "yaml" | "toml" | "json" | "md" | "markdown"
  */
 export type FrontMatterFormat = "yaml-frontmatter" | "toml-frontmatter" | "json-frontmatter";
 /**
- * Supported file format.
+ * Supported file format. Actually it can be any string because of custom formats.
  */
-export type FileFormat = "yml" | "yaml" | "toml" | "json" | "frontmatter" | FrontMatterFormat;
+export type FileFormat = "yml" | "yaml" | "toml" | "json" | "frontmatter" | FrontMatterFormat | string;
 /**
  * Collection filter options.
  */
@@ -1388,6 +1501,10 @@ export type NestedCollectionOptions = {
      * Summary template for a tree item. Default: `{{title}}`.
      */
     summary?: string;
+    /**
+     * Whether to include subfolders. Default: `true`.
+     */
+    subfolders?: boolean;
 };
 /**
  * Collection meta data’s path options.
@@ -1467,10 +1584,9 @@ export type CollectionDivider = {
     divider: boolean;
 };
 /**
- * A raw collection defined in the configuration file. Note: In Sveltia CMS, a folder collection is
- * called an entry collection.
+ * Common collection properties.
  */
-export type Collection = {
+export type CommonCollectionProps = {
     /**
      * Unique identifier for the collection.
      */
@@ -1497,28 +1613,6 @@ export type Collection = {
      */
     icon?: string;
     /**
-     * Field name to be used as the title and slug of an
-     * entry. Entry collection only. Default: `title`.
-     */
-    identifier_field?: FieldKeyPath;
-    /**
-     * A set of files. File collection only.
-     */
-    files?: CollectionFile[];
-    /**
-     * Base folder path relative to the project root. Entry collection only.
-     */
-    folder?: string;
-    /**
-     * Set of fields to be included in entries. Entry collection only.
-     */
-    fields?: Field[];
-    /**
-     * File path relative to `folder`, without a file extension. Entry
-     * collection only.
-     */
-    path?: string;
-    /**
      * Internal media folder path for the collection. This overrides
      * the global `media_folder` option. It can be a relative path from the project root if it starts
      * with a slash. Otherwise it’s a path relative to the entry. If this option is omitted, the global
@@ -1533,32 +1627,14 @@ export type Collection = {
      */
     public_folder?: string;
     /**
-     * Entry filter. Entry collection only.
-     */
-    filter?: CollectionFilter;
-    /**
      * Whether to hide the collection in the UI. Default: `false`.
      */
     hide?: boolean;
-    /**
-     * Whether to allow users to create entries in the collection. Entry
-     * collection only. Default: `false`.
-     */
-    create?: boolean;
-    /**
-     * Whether to allow users to delete entries in the collection. Entry
-     * collection only. Default: `true`.
-     */
-    delete?: boolean;
     /**
      * Whether to show the publishing control UI for Editorial Workflow.
      * Default: `true`.
      */
     publish?: boolean;
-    /**
-     * File extension. Entry collection only. Default: `md`.
-     */
-    extension?: FileExtension;
     /**
      * File format. It should match the file extension. Default:
      * `yaml-frontmatter`.
@@ -1569,43 +1645,6 @@ export type Collection = {
      * format. Default: depends on the front matter type.
      */
     frontmatter_delimiter?: string | string[];
-    /**
-     * Item slug template. Entry collection only. Default: `identifier_field`
-     * option value. It’s possible to [localize the
-     * slug](https://github.com/sveltia/sveltia-cms#localizing-entry-slugs) or [use a random
-     * ID](https://github.com/sveltia/sveltia-cms#using-a-random-id-for-an-entry-slug). Also, it’s
-     * possible to show a special slug editor field in initial entry drafts by using `{{fields._slug}}`
-     * (with an underscore prefix) or `{{fields._slug | localize}}` (to localize the slug).
-     */
-    slug?: string;
-    /**
-     * The maximum number of characters allowed for an entry slug.
-     * Entry collection only. Default: `Infinity`.
-     */
-    slug_length?: number;
-    /**
-     * Entry summary template. Entry collection only. Default:
-     * `identifier_field`.
-     */
-    summary?: string;
-    /**
-     * Custom sortable fields. Entry
-     * collection only. Default: `title`, `name`, `date`, `author` and `description`. For a Git backend,
-     * commit author and commit date are also included by default. See our
-     * [README](https://github.com/sveltia/sveltia-cms#specifying-default-sort-field-and-direction) for
-     * details.
-     */
-    sortable_fields?: FieldKeyPath[] | SortableFields;
-    /**
-     * View filters to be used in the entry list.
-     * Entry collection only.
-     */
-    view_filters?: ViewFilter[] | ViewFilters;
-    /**
-     * View groups to be used in the entry list.
-     * Entry collection only.
-     */
-    view_groups?: ViewGroup[] | ViewGroups;
     /**
      * I18n options. Default: `false`.
      */
@@ -1623,23 +1662,6 @@ export type Collection = {
      */
     editor?: EditorOptions;
     /**
-     * Options for a nested collection. Entry collection
-     * only.
-     */
-    nested?: NestedCollectionOptions;
-    /**
-     * Meta data for a nested collection. Entry collection only.
-     */
-    meta?: CollectionMetaData;
-    /**
-     * Index file inclusion options. Entry
-     * collection only. If `true`, the default index file name is `_index`, which is used for Hugo’s
-     * special index file. See our
-     * [README](https://github.com/sveltia/sveltia-cms#including-hugos-special-index-file-in-a-folder-collection)
-     * for details.
-     */
-    index_file?: CollectionIndexFile | boolean;
-    /**
      * Whether to double-quote all the strings values if the YAML
      * format is used for file output. Default: `false`.
      * @deprecated Use the global YAML format options. `yaml_quote: true` is equivalent to `quote:
@@ -1647,20 +1669,135 @@ export type Collection = {
      * details.
      */
     yaml_quote?: boolean;
+};
+/**
+ * Entry collection properties.
+ */
+export type EntryCollectionProps = {
     /**
-     * A field key path to be used to find an
-     * entry thumbnail displayed on the entry list. A nested field can be specified using dot notation,
-     * e.g. `heroImage.src`. A wildcard in the key path is also supported, e.g. `images.*.src`. Multiple
-     * key paths can be specified as an array for fallbacks. If this option is omitted, the `name` of
-     * any non-nested, non-empty field using the Image or File widget is used. Entry collection only.
+     * Base folder path relative to the project root. It can contain slashes
+     * to create subfolders.
      */
-    thumbnail?: FieldKeyPath | FieldKeyPath[];
+    folder: string;
+    /**
+     * Set of fields to be included in entries.
+     */
+    fields: Field[];
+    /**
+     * File path relative to `folder`, without a file extension. It can
+     * contain slashes to create subfolders. Default: `{{slug}}`. To use Hugo’s page bundle, set this to
+     * `{{slug}}/index`.
+     */
+    path?: string;
+    /**
+     * Entry filter.
+     */
+    filter?: CollectionFilter;
+    /**
+     * Whether to allow users to create entries in the collection. Default:
+     * `false`.
+     */
+    create?: boolean;
+    /**
+     * Whether to allow users to delete entries in the collection. Default:
+     * `true`.
+     */
+    delete?: boolean;
+    /**
+     * File extension. Default: `md`.
+     */
+    extension?: FileExtension;
+    /**
+     * Field name to be used as the title and slug of an
+     * entry. Default: `title`.
+     */
+    identifier_field?: FieldKeyPath;
+    /**
+     * Item slug template. Default: `identifier_field` option value. It cannot
+     * contain slashes; to organize entries in subfolders, use the `path` option instead. It’s possible
+     * to [localize the slug](https://github.com/sveltia/sveltia-cms#localizing-entry-slugs) or [use a
+     * random ID](https://github.com/sveltia/sveltia-cms#using-a-random-id-for-an-entry-slug). Also,
+     * it’s possible to show a special slug editor field in initial entry drafts by using
+     * `{{fields._slug}}` (with an underscore prefix) or `{{fields._slug | localize}}` (to localize the
+     * slug).
+     */
+    slug?: string;
+    /**
+     * The maximum number of characters allowed for an entry slug.
+     * Default: `Infinity`.
+     */
+    slug_length?: number;
+    /**
+     * Entry summary template. Default: `identifier_field`.
+     */
+    summary?: string;
+    /**
+     * Custom sortable fields. Default:
+     * `title`, `name`, `date`, `author` and `description`. For a Git backend, commit author and commit
+     * date are also included by default. See our
+     * [README](https://github.com/sveltia/sveltia-cms#specifying-default-sort-field-and-direction) for
+     * details.
+     */
+    sortable_fields?: FieldKeyPath[] | SortableFields;
+    /**
+     * View filters to be used in the entry list.
+     */
+    view_filters?: ViewFilter[] | ViewFilters;
+    /**
+     * View groups to be used in the entry list.
+     */
+    view_groups?: ViewGroup[] | ViewGroups;
+    /**
+     * Options for a nested collection.
+     */
+    nested?: NestedCollectionOptions;
+    /**
+     * Meta data for a nested collection.
+     */
+    meta?: CollectionMetaData;
+    /**
+     * Index file inclusion options. If `true`,
+     * the default index file name is `_index`, which is used for Hugo’s special index file. See our
+     * [README](https://github.com/sveltia/sveltia-cms#including-hugos-special-index-file-in-a-folder-collection)
+     * for details.
+     */
+    index_file?: CollectionIndexFile | boolean;
+    /**
+     * Whether to show entry thumbnails
+     * in the entry list. Default: `true` (auto-detect image/file fields). Set to `false` to disable, or
+     * provide a field key path (e.g., `heroImage.src`) or an array of paths for fallbacks. Supports
+     * nested fields with dot notation and wildcards (e.g., `images.*.src`). An empty array equals
+     * `false`.
+     */
+    thumbnail?: boolean | FieldKeyPath | FieldKeyPath[];
     /**
      * The maximum number of entries that can be created in the collection.
-     * Entry collection only. Default: `Infinity`.
+     * Default: `Infinity`.
      */
     limit?: number;
 };
+/**
+ * Entry collection definition. In Netlify/Decap CMS, an entry collection is called a folder
+ * collection.
+ */
+export type EntryCollection = CommonCollectionProps & EntryCollectionProps;
+/**
+ * File collection properties.
+ */
+export type FileCollectionProps = {
+    /**
+     * A set of files.
+     */
+    files: CollectionFile[];
+};
+/**
+ * File collection definition.
+ */
+export type FileCollection = CommonCollectionProps & FileCollectionProps;
+/**
+ * Collection definition.
+ */
+export type Collection = EntryCollection | FileCollection;
 /**
  * Supported Git backend name.
  */
@@ -1699,92 +1836,25 @@ export type CommitMessages = {
     openAuthoring?: string;
 };
 /**
- * Backend options.
+ * Git backend properties.
  */
-export type BackendOptions = {
-    /**
-     * Backend name.
-     */
-    name: BackendName;
-    /**
-     * Repository identifier. Required for Git backends. GitHub/Gitea/Forgejo:
-     * organization/user name and repository name joined by a slash, e.g. `owner/repo`. GitLab:
-     * namespace and project name joined by a slash, e.g. `group/project` or `group/subgroup/project`.
-     */
-    repo?: string;
+export type GitBackendProps = {
     /**
      * Git branch name. If omitted, the default branch, usually `main` or
-     * `master`, will be used. Git backends only.
+     * `master`, will be automatically detected and used.
      */
     branch?: string;
     /**
-     * REST API endpoint for the backend. Git backends only. Required when
-     * using GitHub Enterprise Server, a self-hosted GitLab/Gitea/Forgejo instance. Default:
-     * `https://api.github.com` (GitHub), `https://gitlab.com/api/v4` (GitLab) or
-     * `https://gitea.com/api/v1` (Gitea/Forgejo).
-     */
-    api_root?: string;
-    /**
-     * GraphQL API endpoint for the backend. Git backends only.
-     * Default: inferred from `api_root` option value.
-     */
-    graphql_api_root?: string;
-    /**
      * Site domain used for OAuth, which will be included in the
-     * `site_id` param to be sent to the API endpoint. Git backends only. Default:
-     * [`location.hostname`](https://developer.mozilla.org/en-US/docs/Web/API/Location/hostname).
+     * `site_id` param to be sent to the API endpoint. Default: [current
+     * hostname](https://developer.mozilla.org/en-US/docs/Web/API/Location/hostname) (or
+     * `cms.netlify.com` on `localhost`).
      */
     site_domain?: string;
     /**
-     * OAuth base URL origin. Git backends only. Required when using an
-     * OAuth client other than Netlify, including [Sveltia CMS
-     * Authenticator](https://github.com/sveltia/sveltia-cms-auth). Default: `https://api.netlify.com`
-     * (GitHub), `https://gitlab.com` (GitLab) or `https://gitea.com/` (Gitea/Forgejo).
-     */
-    base_url?: string;
-    /**
-     * OAuth base URL path. Git backends only. Default: `auth`
-     * (GitHub) or `oauth/authorize` (GitLab).
-     */
-    auth_endpoint?: string;
-    /**
-     * OAuth authentication method. GitLab only. Default:
-     * `pkce`.
-     */
-    auth_type?: "pkce" | "implicit";
-    /**
-     * OAuth application ID. GitLab, Gitea/Forgejo only. Required for
-     * Gitea/Forgejo.
-     */
-    app_id?: string;
-    /**
-     * Custom commit messages. Git backends only.
+     * Custom commit messages.
      */
     commit_messages?: CommitMessages;
-    /**
-     * Deploy preview link context. GitHub only.
-     */
-    preview_context?: string;
-    /**
-     * Pull request label prefix for Editorial Workflow. Git
-     * backends only. Default: `sveltia-cms/`.
-     */
-    cms_label_prefix?: string;
-    /**
-     * Whether to use squash marge for Editorial Workflow. Git
-     * backends only. Default: `false`.
-     */
-    squash_merges?: boolean;
-    /**
-     * Whether to use Open Authoring. Git backends only. Default:
-     * `false`.
-     */
-    open_authoring?: boolean;
-    /**
-     * Authentication scope for Open Authoring. Git
-     * backends only.
-     */
-    auth_scope?: "repo" | "public_repo";
     /**
      * Whether to enable or disable automatic deployments
      * with any connected CI/CD provider. Default: `undefined`.
@@ -1797,11 +1867,187 @@ export type BackendOptions = {
     /**
      * Whether to enable or disable automatic deployments with any
      * connected CI/CD provider, such as GitHub Actions or Cloudflare Pages. If `true`, the `[skip ci]`
-     * prefix will be added to commit messages. Git backends only. Default: `undefined`. See our
+     * prefix will be added to commit messages. Default: `undefined`. See our
      * [README](https://github.com/sveltia/sveltia-cms#disabling-automatic-deployments) for details.
      */
     skip_ci?: boolean;
 };
+/**
+ * GitHub backend properties.
+ */
+export type GitHubBackendProps = {
+    /**
+     * Backend name.
+     */
+    name: "github";
+    /**
+     * Repository identifier: organization/user name and repository name joined
+     * by a slash, e.g. `owner/repo`.
+     */
+    repo: string;
+    /**
+     * REST API endpoint for the backend. Required when using GitHub
+     * Enterprise Server. Default: `https://api.github.com`.
+     */
+    api_root?: string;
+    /**
+     * GraphQL API endpoint for the backend. Default: inferred
+     * from `api_root` option value.
+     */
+    graphql_api_root?: string;
+    /**
+     * OAuth base URL origin. Required when using an OAuth client other
+     * than Netlify, including [Sveltia CMS Authenticator](https://github.com/sveltia/sveltia-cms-auth).
+     * Default: `https://api.netlify.com`.
+     */
+    base_url?: string;
+    /**
+     * OAuth grant type. The default is an empty string, which is
+     * authorization code grant. `pkce` is not yet supported.
+     */
+    auth_type?: "" | "pkce";
+    /**
+     * OAuth base URL path. Default: `auth`.
+     */
+    auth_endpoint?: string;
+    /**
+     * OAuth application ID. Required when using PKCE authorization.
+     */
+    app_id?: string;
+    /**
+     * Pull request label prefix for Editorial Workflow. Default:
+     * `sveltia-cms/`.
+     */
+    cms_label_prefix?: string;
+    /**
+     * Whether to use squash marge for Editorial Workflow. Default:
+     * `false`.
+     */
+    squash_merges?: boolean;
+    /**
+     * Deploy preview link context.
+     */
+    preview_context?: string;
+    /**
+     * Whether to use Open Authoring. Default: `false`.
+     */
+    open_authoring?: boolean;
+    /**
+     * Authentication scope for Open Authoring.
+     */
+    auth_scope?: "repo" | "public_repo";
+};
+/**
+ * GitHub backend.
+ */
+export type GitHubBackend = GitBackendProps & GitHubBackendProps;
+/**
+ * GitLab backend properties.
+ */
+export type GitLabBackendProps = {
+    /**
+     * Backend name.
+     */
+    name: "gitlab";
+    /**
+     * Repository identifier: namespace and project name joined by a slash, e.g.
+     * `group/project` or `group/subgroup/project`.
+     */
+    repo: string;
+    /**
+     * REST API endpoint for the backend. Required when using a
+     * self-hosted GitLab instance. Default: `https://gitlab.com/api/v4`.
+     */
+    api_root?: string;
+    /**
+     * GraphQL API endpoint for the backend. Default: inferred
+     * from `api_root` option value.
+     */
+    graphql_api_root?: string;
+    /**
+     * OAuth base URL origin. Required when using an OAuth client other
+     * than Netlify, including [Sveltia CMS Authenticator](https://github.com/sveltia/sveltia-cms-auth).
+     * Default: `https://gitlab.com`.
+     */
+    base_url?: string;
+    /**
+     * OAuth grant type. The default is an empty string, which is
+     * authorization code grant. `pkce` is recommended for better security and easier setup. `implicit`
+     * is not supported in Sveltia CMS.
+     */
+    auth_type?: "" | "pkce";
+    /**
+     * OAuth base URL path. Default: `oauth/authorize`.
+     */
+    auth_endpoint?: string;
+    /**
+     * OAuth application ID. Required when using PKCE authorization.
+     */
+    app_id?: string;
+    /**
+     * Pull request label prefix for Editorial Workflow. Default:
+     * `sveltia-cms/`.
+     */
+    cms_label_prefix?: string;
+};
+/**
+ * GitLab backend.
+ */
+export type GitLabBackend = GitBackendProps & GitLabBackendProps;
+/**
+ * Gitea/Forgejo backend properties.
+ */
+export type GiteaBackendProps = {
+    /**
+     * Backend name.
+     */
+    name: "gitea";
+    /**
+     * Repository identifier: organization/user name and repository name joined
+     * by a slash, e.g. `owner/repo`.
+     */
+    repo: string;
+    /**
+     * REST API endpoint for the backend. Required when using a
+     * self-hosted Gitea/Forgejo instance. Default: `https://gitea.com/api/v1`.
+     */
+    api_root?: string;
+    /**
+     * OAuth base URL origin. Required when using an OAuth client other
+     * than Netlify, including [Sveltia CMS Authenticator](https://github.com/sveltia/sveltia-cms-auth).
+     * Default: `https://gitea.com/`.
+     */
+    base_url?: string;
+    /**
+     * OAuth base URL path. Default: `login/oauth/authorize`.
+     */
+    auth_endpoint?: string;
+    /**
+     * OAuth application ID.
+     */
+    app_id: string;
+};
+/**
+ * Gitea/Forgejo backend.
+ */
+export type GiteaBackend = GitBackendProps & GiteaBackendProps;
+/**
+ * Git-based backend.
+ */
+export type GitBackend = GitHubBackend | GitLabBackend | GiteaBackend;
+/**
+ * Test backend.
+ */
+export type TestBackend = {
+    /**
+     * Backend name.
+     */
+    name: "test-repo";
+};
+/**
+ * Backend options.
+ */
+export type Backend = GitBackend | TestBackend;
 /**
  * Global media library options.
  */
@@ -1810,6 +2056,20 @@ export type GlobalMediaLibraryOptions = {
      * Library name.
      */
     name: MediaLibraryName;
+};
+/**
+ * Custom logo options.
+ */
+export type LogoOptions = {
+    /**
+     * Absolute URL or absolute path to the site logo that will be displayed on
+     * the entrance page and the browser’s tab (favicon). A square image works best.
+     */
+    src: string;
+    /**
+     * Whether to show the logo in the header. Default: `true`.
+     */
+    show_in_header?: boolean;
 };
 /**
  * Entry slug options.
@@ -1855,6 +2115,10 @@ export type YamlFormatOptions = {
      */
     indent_size?: number;
     /**
+     * Whether to indent block sequences. Default: `true`.
+     */
+    indent_sequences?: boolean;
+    /**
      * String value’s default quote type. Default:
      * 'none'.
      */
@@ -1887,11 +2151,11 @@ export type OutputOptions = {
     yaml?: YamlFormatOptions;
 };
 /**
- * Site configuration.
+ * CMS configuration.
  */
-export type SiteConfig = {
+export type CmsConfig = {
     /**
-     * Whether to load YAML/JSON site configuration file(s) when
+     * Whether to load YAML/JSON CMS configuration file(s) when
      * [manually initializing the CMS](https://decapcms.org/docs/manual-initialization/). This works
      * only in the `CMS.init()` method’s `config` option. Default: `true`.
      */
@@ -1899,17 +2163,17 @@ export type SiteConfig = {
     /**
      * Backend options.
      */
-    backend: BackendOptions;
+    backend: Backend;
     /**
      * Publish mode. An empty string is
      * the same as `simple`. Default: `simple`.
      */
-    publish_mode?: "simple" | "editorial_workflow" | "";
+    publish_mode?: "" | "simple" | "editorial_workflow";
     /**
-     * Global internal media folder path, relative to the project’s root
-     * directory.
+     * Global internal media folder path, relative to the project’s
+     * root directory. Required unless a cloud media library is configured.
      */
-    media_folder: string;
+    media_folder?: string;
     /**
      * Global public media folder path, relative to the project’s
      * public URL. It must be an absolute path starting with `/`. Default: `media_folder` option value.
@@ -1941,8 +2205,14 @@ export type SiteConfig = {
      * Absolute URL or absolute path to the site logo that will be
      * displayed on the entrance page and the browser’s tab (favicon). A square image works best.
      * Default: Sveltia logo.
+     * @deprecated This option is superseded by the new `logo.src` option. See the Decap CMS doc
+     * https://decapcms.org/docs/configuration-options/#custom-logo for details.
      */
     logo_url?: string;
+    /**
+     * Site logo options.
+     */
+    logo?: LogoOptions;
     /**
      * URL to redirect users to after logging out.
      */
@@ -1963,7 +2233,7 @@ export type SiteConfig = {
     collections?: (Collection | CollectionDivider)[];
     /**
      * Set of singleton files, such as
-     * the site configuration file or the homepage file. They are not part of any collection and can be
+     * the CMS configuration file or the homepage file. They are not part of any collection and can be
      * accessed directly through the collection list. The list can also contain dividers. See our
      * [README](https://github.com/sveltia/sveltia-cms#using-singletons) for details.
      */
@@ -2007,6 +2277,10 @@ export type EditorComponentDefinition = {
      * icon](https://fonts.google.com/icons?icon.set=Material+Symbols) to be displayed in the editor UI.
      */
     icon?: string;
+    /**
+     * Whether to collapse the object by default. Default: `false`.
+     */
+    collapsed?: boolean;
     /**
      * Set of fields to be displayed in the component.
      */

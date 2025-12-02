@@ -1,11 +1,10 @@
 <!--
   @component
   Implement the editor for the Object widget.
-  @see https://decapcms.org/docs/widgets/#object
+  @see https://decapcms.org/docs/widgets/#Object
 -->
 <script>
   import { Button, Checkbox, Icon, TruncatedText } from '@sveltia/ui';
-  import { waitForVisibility } from '@sveltia/utils/element';
   import { toRaw } from '@sveltia/utils/object';
   import { getContext, onMount, tick } from 'svelte';
   import { _ } from 'svelte-i18n';
@@ -28,7 +27,11 @@
 
   /**
    * @import { EntryDraft, FieldEditorContext, WidgetEditorProps } from '$lib/types/private';
-   * @import { ObjectField } from '$lib/types/public';
+   * @import {
+   * ObjectField,
+   * ObjectFieldWithSubFields,
+   * ObjectFieldWithTypes,
+   * } from '$lib/types/public';
    */
 
   /**
@@ -39,6 +42,8 @@
 
   /** @type {FieldEditorContext} */
   const { widgetContext, valueStoreKey = 'currentValues' } = getContext('field-editor') ?? {};
+  // Hide the header/expander if in a single subfield list widget because it’s redundant
+  const hideHeader = widgetContext === 'single-subfield-list-widget';
 
   /** @type {WidgetEditorProps & Props} */
   let {
@@ -53,19 +58,15 @@
 
   const widgetId = $props.id();
 
-  /** @type {HTMLElement | undefined} */
-  let wrapper = $state();
-
   const {
     name: fieldName,
     i18n = false,
     // Widget-specific options
     collapsed,
     summary,
-    fields,
-    types,
-    typeKey = 'type',
   } = $derived(fieldConfig);
+  const { fields } = $derived(/** @type {ObjectFieldWithSubFields} */ (fieldConfig));
+  const { types, typeKey = 'type' } = $derived(/** @type {ObjectFieldWithTypes} */ (fieldConfig));
   const isIndexFile = $derived($entryDraft?.isIndexFile ?? false);
   const collection = $derived($entryDraft?.collection);
   const collectionName = $derived($entryDraft?.collectionName ?? '');
@@ -99,6 +100,10 @@
    * Initialize the expander state.
    */
   const initializeExpanderState = () => {
+    if (hideHeader) {
+      return;
+    }
+
     const key = parentExpandedKeyPath;
 
     syncExpanderStates({ [key]: getInitialExpanderState({ key, locale, collapsed }) });
@@ -207,55 +212,59 @@
     class="wrapper"
     aria-labelledby={parentExpanded ? undefined : `object-${widgetId}-summary`}
   >
-    <ObjectHeader
-      label={hasVariableTypes ? typeConfig?.label || typeConfig?.name : ''}
-      controlId="object-{widgetId}-item-list"
-      expanded={parentExpanded}
-      toggleExpanded={subFields.length
-        ? () => syncExpanderStates({ [parentExpandedKeyPath]: !parentExpanded })
-        : undefined}
-    >
-      {#snippet endContent()}
-        {#if hasVariableTypes}
-          <Button
-            size="small"
-            iconic
-            disabled={addButtonDisabled}
-            aria-label={$_('remove')}
-            onclick={() => {
-              removeFields();
-            }}
-          >
-            {#snippet startIcon()}
-              <Icon name="close" />
-            {/snippet}
-          </Button>
-        {/if}
-      {/snippet}
-    </ObjectHeader>
-    <div role="none" class="item-list" id="object-{widgetId}-item-list" bind:this={wrapper}>
-      {#await waitForVisibility(wrapper) then}
-        {#if parentExpanded}
-          {#each subFields as subField (subField.name)}
-            <VisibilityObserver>
-              <FieldEditor
-                keyPath={[keyPath, subField.name].join('.')}
-                {locale}
-                fieldConfig={subField}
-              />
-            </VisibilityObserver>
-          {/each}
-        {:else}
-          {@const formattedSummary = _formatSummary()}
-          {#if formattedSummary}
-            <div role="none" class="summary" id="object-{widgetId}-summary">
-              <TruncatedText lines={$isSmallScreen ? 2 : 1}>
-                {formattedSummary}
-              </TruncatedText>
-            </div>
+    {#if !hideHeader}
+      <ObjectHeader
+        label={hasVariableTypes ? typeConfig?.label || typeConfig?.name : ''}
+        controlId="object-{widgetId}-item-list"
+        expanded={parentExpanded}
+        toggleExpanded={subFields.length
+          ? () => syncExpanderStates({ [parentExpandedKeyPath]: !parentExpanded })
+          : undefined}
+      >
+        {#snippet endContent()}
+          {#if hasVariableTypes}
+            <Button
+              size="small"
+              iconic
+              disabled={addButtonDisabled}
+              aria-label={$_('remove')}
+              onclick={() => {
+                removeFields();
+              }}
+            >
+              {#snippet startIcon()}
+                <Icon name="close" />
+              {/snippet}
+            </Button>
           {/if}
+        {/snippet}
+      </ObjectHeader>
+    {/if}
+    <div role="none" class="item-list" id="object-{widgetId}-item-list">
+      {#if parentExpanded}
+        {#each subFields as subField (subField.name)}
+          {@const subFieldKeyPath = `${keyPath}.${subField.name}`}
+          <VisibilityObserver>
+            <FieldEditor
+              keyPath={subFieldKeyPath}
+              typedKeyPath={hasVariableTypes && typeConfig?.name
+                ? `${keyPath}<${typeConfig.name}>.${subField.name}`
+                : subFieldKeyPath}
+              {locale}
+              fieldConfig={subField}
+            />
+          </VisibilityObserver>
+        {/each}
+      {:else}
+        {@const formattedSummary = _formatSummary()}
+        {#if formattedSummary}
+          <div role="none" class="summary" id="object-{widgetId}-summary">
+            <TruncatedText lines={$isSmallScreen ? 2 : 1}>
+              {formattedSummary}
+            </TruncatedText>
+          </div>
         {/if}
-      {/await}
+      {/if}
     </div>
   </div>
 {/if}

@@ -64,13 +64,15 @@ export const strings = {
   loading: 'Loading…',
   later: 'Later',
   slug: 'Slug',
+  singleton: 'Singleton',
+  singletons: 'Singletons',
 
   // Common errors
   clipboard_error: 'There was an error while copying data.',
 
   // Entrance
   welcome_to_sveltia_cms: 'Welcome to Sveltia CMS',
-  loading_site_config: 'Loading Site Configuration…',
+  loading_cms_config: 'Loading CMS Configuration…',
   loading_site_data: 'Loading Site Data…',
   loading_site_data_error: 'There was an error while loading site data.',
   sign_in_with_x: 'Sign In with {service}',
@@ -139,7 +141,7 @@ export const strings = {
   live_site: 'Live Site',
   git_repository: 'Git Repository',
   settings: 'Settings',
-  site_config: 'Site Configuration',
+  cms_config: 'CMS Configuration',
   show_help_menu: 'Show Help Menu',
   help: 'Help',
   keyboard_shortcuts: 'Keyboard Shortcuts',
@@ -273,6 +275,7 @@ export const strings = {
   },
   replace_asset: 'Replace Asset',
   replace_x: 'Replace {name}',
+  click_to_browse: 'Click to browse…',
   tap_to_browse: 'Tap to browse…',
   drop_file_or_click_to_browse: 'Drop a file here or click to browse…',
   drop_files_or_click_to_browse: 'Drop files here or click to browse…',
@@ -322,6 +325,10 @@ export const strings = {
     'This file cannot be uploaded because it exceeds the maximum size of {size}. Please reduce the size or select a different file.',
   warning_oversized_files:
     'These files cannot be uploaded because they exceed the maximum size of {size}. Please reduce the sizes or select different files.',
+  uploading_files_progress: 'Uploading files…',
+  uploading_file_progress: 'Uploading file…',
+  uploading_files_failed: 'Files could not be uploaded',
+  uploading_file_failed: 'File could not be uploaded',
   file_meta: '{type} · {size}',
   file_meta_converted_from_x: '(converted from {type})',
   no_entries_created: 'This collection has no entries yet.',
@@ -590,14 +597,48 @@ export const strings = {
   cloud_storage: {
     invalid: 'The service is not configured properly.',
     auth: {
-      initial: 'Sign into {service} to insert media on the storage to entry fields.',
-      requested: 'Signing in…',
-      error: 'User name or password is incorrect. Please double check and try again.',
+      api_key: {
+        initial: 'Enter your API key to sign in to {service}.',
+        requested: 'Validating…',
+        error: 'The provided API key is invalid. Please double check and try again.',
+      },
+      password: {
+        initial: 'Enter your password to sign in to {service}.',
+        requested: 'Signing in…',
+        error: 'User name or password is incorrect. Please double check and try again.',
+      },
+    },
+    cloudinary: {
+      iframe_title: 'Cloudinary media library',
+      activate: {
+        button_label: 'Activate Cloudinary',
+        description: 'After signing in, click the Sign In button again to continue.', // Don’t translate "Sign In" here
+      },
+      auth: {
+        initial: 'Enter you API Secret to use Cloudinary.', // Not "API Key"
+        requested: 'Validating…',
+        error: 'The provided API Secret is invalid. Please double check and try again.',
+      },
+    },
+    uploadcare: {
+      auth: {
+        initial: 'Enter your API Secret Key to use Uploadcare.',
+        requested: 'Validating…',
+        error: 'The provided Secret Key is invalid. Please double check and try again.',
+      },
     },
   },
 
   // Configuration
   config: {
+    one_error: 'There is an error in the CMS configuration. Please solve the issue and try again.',
+    many_errors:
+      'There are errors in the CMS configuration. Please solve the issues and try again.',
+    error_locator: {
+      collection: '{collection} collection',
+      file: '{file} file',
+      field: '`{field}` field',
+    },
     error: {
       no_secure_context: 'Sveltia CMS only works with HTTPS or localhost URLs.',
       fetch_failed: 'The configuration file could not be retrieved.',
@@ -605,29 +646,86 @@ export const strings = {
       parse_failed: 'The configuration file could not be parsed.',
       parse_failed_invalid_object: 'The configuration file is not a valid JavaScript object.',
       parse_failed_unsupported_type:
-        'The configuration file is not a valid file type. Only YAML and JSON are supported.',
-      no_collection: 'Collections are not defined in the configuration file.',
-      missing_backend: 'The backend is not defined in the configuration file.',
-      missing_backend_name: 'The backend name is not defined in the configuration file.',
+        'The configuration file is not a valid file type. Only YAML, TOML and JSON are supported.',
+      no_collection: 'Collections are not defined.',
+      missing_backend: 'The backend is not defined.',
+      missing_backend_name: 'The backend name is not defined.',
       unsupported_backend: 'The configured “{name}” backend is not supported.',
-      missing_repository: 'The repository is not defined in the configuration file.',
+      missing_repository: 'The repository is not defined.',
       invalid_repository:
         'The configured repository is invalid. It must be in “owner/repo” format.',
       oauth_implicit_flow: 'The configured authentication method (implicit flow) is not supported.',
-      oauth_no_app_id: 'OAuth application ID is not defined in the configuration file.',
-      missing_media_folder: 'The media folder is not defined in the configuration file.',
+      oauth_no_app_id: 'OAuth application ID is not defined.',
+      missing_media_folder: 'The media folder is not defined.',
       invalid_media_folder: 'The configured media folder is invalid. It must be a string.',
       invalid_public_folder: 'The configured public folder is invalid. It must be a string.',
       public_folder_relative_path:
         'The configured public folder is invalid. It must be an absolute path starting with “/”.',
       public_folder_absolute_url: 'An absolute URL for the public folder option is not supported.',
-      unexpected: 'There was an unexpected error while validating the configuration file.',
-      try_again: 'Please solve the issue and try again.',
+      invalid_collection_no_options:
+        'The collection must have either the `folder`, `files` or `divider` option defined.',
+      invalid_collection_multiple_options:
+        'The collection cannot have the `folder`, `files` and `divider` options together.',
+      file_format_mismatch: 'The `{extension}` extension doesn’t match the `{format}` format.',
+      invalid_slug_slash:
+        'The slug template `{slug}` is invalid as it cannot contain slashes. To organize entries in subfolders, use the `path` option instead of `slug`.',
+      missing_collection_name:
+        'The collection {count} must have the `name` option defined as a non-empty string.',
+      invalid_collection_name:
+        'The collection name `{name}` is invalid. It must not contain special characters.',
+      duplicate_collection_name:
+        'Collection names must be unique, but `{name}` is used more than once.',
+      missing_collection_file_name:
+        'The collection file {count} must have the `name` option defined as a non-empty string.',
+      invalid_collection_file_name:
+        'The collection file name `{name}` is invalid. It must not contain special characters.',
+      duplicate_collection_file_name:
+        'Collection file names must be unique, but `{name}` is used more than once.',
+      missing_field_name:
+        'The field {count} must have the `name` option defined as a non-empty string.',
+      invalid_field_name:
+        'The field name `{name}` is invalid. It must not contain special characters.',
+      duplicate_field_name: 'Field names must be unique, but `{name}` is used more than once.',
+      missing_variable_type:
+        'The variable type {count} must have the `name` option defined as a non-empty string.',
+      invalid_variable_type:
+        'The variable type name `{name}` is invalid. It must not contain special characters.',
+      duplicate_variable_type:
+        'Variable type names must be unique, but `{name}` is used more than once.',
+      date_widget:
+        'The deprecated `date` widget is not supported in Sveltia CMS. Use the `datetime` widget with the `time_format:false` option instead.',
+      unsupported_deprecated_option:
+        'The deprecated `{prop}` option is not supported in Sveltia CMS. Use the `{newProp}` option instead.',
+      allow_multiple:
+        'The `allow_multiple` option is not supported in Sveltia CMS. Use the `multiple` option instead, which defaults to `false`.',
+      invalid_list_field:
+        'The List field cannot have the `field`, `fields` and `types` options together.',
+      invalid_object_field:
+        'The Object field cannot have the `fields` and `types` options together.',
+      object_field_missing_fields:
+        'The Object field must have either the `fields` or `types` option defined.',
+      relation_field_invalid_collection:
+        'The referenced `{collection}` collection is invalid or not defined.',
+      relation_field_invalid_collection_file:
+        'The referenced `{file}` file is invalid or not defined.',
+      relation_field_missing_file_name:
+        'The `file` option must be defined for a relation to a file collection.',
+      relation_field_invalid_value_field:
+        'The referenced value field `{field}` is invalid or not defined.',
+      unexpected: 'Unexpected error',
+    },
+    warning: {
+      editorial_workflow_unsupported: 'Editorial workflow is not yet supported in Sveltia CMS.',
+      open_authoring_unsupported: 'Open authoring is not yet supported in Sveltia CMS.',
+      nested_collections_unsupported: 'Nested collections are not yet supported in Sveltia CMS.',
+      unsupported_ignored_option:
+        'The `{prop}` option is not supported in Sveltia CMS. It will be ignored.',
     },
   },
 
   // Backends
   local_backend: {
+    indicator: 'Local',
     unsupported_browser:
       'Local development is not supported in your browser. Please use Chrome or Edge instead.',
     disabled: 'Local development is disabled in your browser. <a>Here’s how to enable it</a>.',
@@ -703,8 +801,12 @@ export const strings = {
         description:
           'Sign up for <a {homeHref}>{service} API</a> and enter <a {apiKeyHref}>your API Key</a> here to insert free stock photos to image entry fields.',
         credit: 'Photos provided by {service}',
-        providers_disabled: 'Stock asset providers are disabled by the administrator.',
       },
+      cloud_storage: {
+        field_label: '{service} API Key',
+        description: 'Enter your {service} API key to enable uploading assets to {service}.',
+      },
+      libraries_disabled: 'External media libraries are disabled by the administrator.',
     },
     accessibility: {
       title: 'Accessibility',
@@ -731,9 +833,16 @@ export const strings = {
         title: 'Deploy Hook',
         description:
           'Enter a webhook URL to be called when you manually trigger a deployment by selecting Publish Changes. This can be left blank if you’re using GitHub Actions.',
-        field_label: 'Deploy Hook URL',
-        url_saved: 'Webhook URL has been saved.',
-        url_removed: 'Webhook URL has been removed.',
+        url: {
+          field_label: 'Hook URL',
+          saved: 'Hook URL has been saved.',
+          removed: 'Hook URL has been removed.',
+        },
+        auth: {
+          field_label: 'Authorization header (e.g. Bearer <token>) (optional)',
+          saved: 'Authorization header has been saved.',
+          removed: 'Authorization header has been removed.',
+        },
       },
     },
   },

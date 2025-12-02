@@ -12,17 +12,18 @@ import { getField, isFieldRequired } from '$lib/services/contents/entry/fields';
 
 /**
  * Copy the default locale value to other locales if the field’s i18n strategy is `duplicate`.
+ * @internal
  * @param {object} args Arguments.
  * @param {GetFieldArgs} args.getFieldArgs Arguments for the `getField` function.
  * @param {Field} args.fieldConfig Field configuration.
- * @param {LocaleCode} args.sourceLocale Source locale.
+ * @param {LocaleCode} args.sourceLanguage Source locale.
  * @param {any} args.value Value to copy to other locales.
  */
-const copyDefaultLocaleValue = ({ getFieldArgs, fieldConfig, sourceLocale, value }) => {
+export const copyDefaultLocaleValue = ({ getFieldArgs, fieldConfig, sourceLanguage, value }) => {
   const { keyPath } = getFieldArgs;
 
   Object.entries(/** @type {EntryDraft} */ (get(entryDraft)).currentValues).forEach(
-    ([targetLocale, content]) => {
+    ([targetLanguage, content]) => {
       // Don’t duplicate the value if the parent object doesn’t exist
       if (keyPath.includes('.')) {
         const { path: parentKeyPath } = keyPath.match(/(?<path>.+?)\.[^.]*$/)?.groups ?? {};
@@ -41,11 +42,11 @@ const copyDefaultLocaleValue = ({ getFieldArgs, fieldConfig, sourceLocale, value
         const { value_field: valueField = '{{slug}}' } = /** @type {RelationField} */ (fieldConfig);
 
         if (valueField.startsWith('{{locale}}/')) {
-          value = value.replace(new RegExp(`^${sourceLocale}/`), `${targetLocale}/`);
+          value = value.replace(new RegExp(`^${sourceLanguage}/`), `${targetLanguage}/`);
         }
       }
 
-      if (targetLocale !== sourceLocale && content[keyPath] !== value) {
+      if (targetLanguage !== sourceLanguage && content[keyPath] !== value) {
         content[keyPath] = value;
       }
     },
@@ -66,7 +67,7 @@ const copyDefaultLocaleValue = ({ getFieldArgs, fieldConfig, sourceLocale, value
  */
 export const createProxy = ({
   draft: { collectionName, fileName, isIndexFile },
-  locale: sourceLocale,
+  locale: sourceLanguage,
   target = {},
   getValueMap = undefined,
 }) => {
@@ -84,6 +85,30 @@ export const createProxy = ({
     canonicalSlug: { key: canonicalSlugKey },
   } = (collectionFile ?? collection)._i18n;
 
+  /**
+   * Check if auto-duplication should be performed for the given field.
+   * @param {Field} fieldConfig Field configuration.
+   * @returns {boolean} True if auto-duplication should be performed.
+   */
+  const shouldAutoDuplicate = (fieldConfig) =>
+    get(i18nAutoDupEnabled) && fieldConfig.i18n === 'duplicate' && sourceLanguage === defaultLocale;
+
+  /**
+   * Get field configuration for the given key path.
+   * @param {object} obj The proxy target object.
+   * @param {FieldKeyPath} keyPath The field key path.
+   * @returns {{ valueMap: any, getFieldArgs: GetFieldArgs, fieldConfig: Field | undefined }}
+   * Field info.
+   */
+  const getFieldInfo = (obj, keyPath) => {
+    const valueMap = typeof getValueMap === 'function' ? getValueMap() : obj;
+    /** @type {GetFieldArgs} */
+    const getFieldArgs = { collectionName, fileName, keyPath, valueMap, isIndexFile };
+    const fieldConfig = getField({ ...getFieldArgs });
+
+    return { valueMap, getFieldArgs, fieldConfig };
+  };
+
   return new Proxy(/** @type {any} */ (target), {
     // eslint-disable-next-line jsdoc/require-jsdoc
     set: (obj, /** @type {FieldKeyPath} */ keyPath, value) => {
@@ -96,32 +121,48 @@ export const createProxy = ({
         return true;
       }
 
-      const valueMap = typeof getValueMap === 'function' ? getValueMap() : obj;
-      /** @type {GetFieldArgs} */
-      const getFieldArgs = { collectionName, fileName, keyPath, valueMap, isIndexFile };
-      const fieldConfig = getField({ ...getFieldArgs });
+      const { fieldConfig, getFieldArgs } = getFieldInfo(obj, keyPath);
 
       if (!fieldConfig) {
         return true;
       }
 
-      const validity = get(entryDraft)?.validities?.[sourceLocale]?.[keyPath];
+      const validity = get(entryDraft)?.validities?.[sourceLanguage]?.[keyPath];
 
       // Update validity in real time if validation has already been performed
       if (validity) {
         // @todo Perform all the field validations, not just `valueMissing` for string fields
-        if (typeof value === 'string' && isFieldRequired({ fieldConfig, locale: sourceLocale })) {
+        if (typeof value === 'string' && isFieldRequired({ fieldConfig, locale: sourceLanguage })) {
           validity.valueMissing = !value;
         }
       }
 
       // Copy value to other locales
-      if (
-        get(i18nAutoDupEnabled) &&
-        fieldConfig.i18n === 'duplicate' &&
-        sourceLocale === defaultLocale
-      ) {
-        copyDefaultLocaleValue({ getFieldArgs, fieldConfig, sourceLocale, value });
+      if (shouldAutoDuplicate(fieldConfig)) {
+        copyDefaultLocaleValue({ getFieldArgs, fieldConfig, sourceLanguage, value });
+      }
+
+      return true;
+    },
+    // eslint-disable-next-line jsdoc/require-jsdoc
+    deleteProperty: (obj, /** @type {FieldKeyPath} */ keyPath) => {
+      delete obj[keyPath];
+
+      const { fieldConfig } = getFieldInfo(obj, keyPath);
+
+      if (!fieldConfig) {
+        return true;
+      }
+
+      // Remove the property from other locales
+      if (shouldAutoDuplicate(fieldConfig)) {
+        Object.entries(/** @type {EntryDraft} */ (get(entryDraft)).currentValues).forEach(
+          ([targetLanguage, content]) => {
+            if (targetLanguage !== sourceLanguage && keyPath in content) {
+              delete content[keyPath];
+            }
+          },
+        );
       }
 
       return true;

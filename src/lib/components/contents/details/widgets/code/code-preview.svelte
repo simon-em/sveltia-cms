@@ -1,7 +1,7 @@
 <!--
   @component
   Implement the preview for the Code widget.
-  @see https://decapcms.org/docs/widgets/#code
+  @see https://decapcms.org/docs/widgets/#Code
 -->
 <script>
   import { entryDraft } from '$lib/services/contents/draft';
@@ -14,7 +14,7 @@
   /**
    * @typedef {object} Props
    * @property {CodeField} fieldConfig Field configuration.
-   * @property {string | {} | undefined} currentValue Field value.
+   * @property {string | Record<string, string> | undefined} currentValue Field value.
    */
 
   /** @type {WidgetEditorProps & Props} */

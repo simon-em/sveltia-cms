@@ -1,7 +1,7 @@
 <!--
   @component
   Implement the preview for the Number widget.
-  @see https://decapcms.org/docs/widgets/#number
+  @see https://decapcms.org/docs/widgets/#Number
 -->
 <script>
   import { getCanonicalLocale } from '$lib/services/contents/i18n';
@@ -32,7 +32,7 @@
 </script>
 
 {#if currentValue !== undefined && currentValue !== null && currentValue !== ''}
-  <p lang={locale} dir="auto">
+  <p lang={canonicalLocale} dir="auto">
     {#if valueType === 'int' || valueType === 'float'}
       {numberFormatter.format(Number(currentValue))}
     {:else}

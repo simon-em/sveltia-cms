@@ -3,10 +3,14 @@
  * @import { Writable } from 'svelte/store';
  * @import {
  * BackendName,
+ * CmsConfig,
  * Collection,
+ * CollectionDivider,
  * CollectionFile,
+ * EntryCollection,
  * Field,
  * FieldKeyPath,
+ * FileCollection,
  * FileExtension,
  * FileFormat,
  * FileFormatter,
@@ -14,10 +18,20 @@
  * GitBackendName,
  * I18nFileStructure,
  * LocaleCode,
+ * MediaField,
  * RasterImageFormat,
+ * RelationField,
  * SelectField,
- * SiteConfig,
+ * SelectFieldValue,
  * } from './public';
+ */
+
+/**
+ * A variant of {@link FieldKeyPath} that can include type information for fields with variable
+ * types. The syntax uses angle brackets to enclose the type, e.g. `blocks.*<image>.src` (for a
+ * variable type List field; a list index is replaced with an asterisk) or `widget<button>.label`
+ * (for a variable type Object field).
+ * @typedef {string} TypedFieldKeyPath
  */
 
 /**
@@ -27,14 +41,15 @@
  */
 
 /**
- * @typedef {object} SiteConfigExtraProps
+ * CMS configuration extra properties for internal use.
+ * @typedef {object} CmsConfigExtraProps
  * @property {string} _siteURL `site_url` or the current `location.origin` if it’s not set.
  * @property {string} _baseURL The base/origin of `_siteURL`.
  */
 
 /**
- * Site configuration for internal use.
- * @typedef {SiteConfig & SiteConfigExtraProps} InternalSiteConfig
+ * CMS configuration for internal use.
+ * @typedef {CmsConfig & CmsConfigExtraProps} InternalCmsConfig
  */
 
 /**
@@ -69,6 +84,8 @@
  * @property {boolean} [devModeEnabled] Whether to enable the developer mode.
  * @property {string} [deployHookURL] Webhook URL to manually trigger a new deployment on any
  * connected CI/CD provider.
+ * @property {string} [deployHookAuthHeader] Webhook `Authorization` request header value, including
+ * the scheme and token, e.g. `Bearer <token>`.
  * @property {string} [defaultTranslationService] Default translation service ID, e.g. `google`.
  */
 
@@ -97,6 +114,7 @@
  * API endpoint configuration.
  * @typedef {object} ApiEndpointConfig
  * @property {string} clientId OAuth client ID.
+ * @property {string} authScope OAuth scope.
  * @property {string} authURL OAuth authorization URL.
  * @property {string} tokenURL OAuth token URL.
  * @property {string} [authScheme] Authorization scheme. Default is `token`.
@@ -194,6 +212,23 @@
  */
 
 /**
+ * Asset kind filter.
+ * @typedef {'image'} MediaLibraryAssetKind
+ */
+
+/**
+ * Media library fetch options.
+ * @typedef {object} MediaLibraryFetchOptions
+ * @property {MediaLibraryAssetKind} [kind] Asset kind filter.
+ * @property {MediaField} [fieldConfig] File/Image field configuration.
+ * @property {string} apiKey API authentication key.
+ * @property {string} [userName] User name for services that require user authentication, such as
+ * cloud storage services.
+ * @property {string} [password] Password for services that require user authentication, such as
+ * cloud storage services.
+ */
+
+/**
  * External media library service, such as a stock asset provider or a cloud storage service.
  * @typedef {object} MediaLibraryService
  * @property {'stock_assets' | 'cloud_storage'} serviceType Service type.
@@ -202,22 +237,38 @@
  * @property {string} serviceURL Service URL.
  * @property {boolean} showServiceLink Whether to show a link to the service in the media library.
  * @property {boolean} hotlinking Whether to hotlink files.
- * @property {'api_key' | 'password'} authType Authentication type.
+ * @property {'api_key' | 'password' | 'widget'} authType Authentication type. `api_key` means the
+ * service requires an API key (or API secret, depending on the service) for user authentication.
+ * `password` means the service requires username/password for authentication. `widget` means the
+ * service provides its own widget for file selection, and authentication is handled by the widget.
  * @property {string} [developerURL] URL of the page that provides the API/developer service.
  * @property {string} [apiKeyURL] URL of the page that provides an API key.
  * @property {RegExp} [apiKeyPattern] API key pattern.
+ * @property {() => boolean} [isEnabled] Whether the service is enabled. It’s determined by whether
+ * the service is defined in the CMS configuration.
  * @property {() => Promise<boolean>} [init] Function to initialize the service.
  * @property {(userName: string, password: string) => Promise<boolean>} [signIn] Function to sign in
  * to the service.
- * @property {(query: string, options: { kind?: string, apiKey: string, userName?: string,
- * password?: string }) => Promise<ExternalAsset[]>} search Function to search files.
+ * @property {(query: string, options: MediaLibraryFetchOptions) => Promise<ExternalAsset[]>
+ * } [search] Function to search files.
+ * @property {(options: MediaLibraryFetchOptions) => Promise<ExternalAsset[]>} [list] Function to
+ * list files. For stock asset services, it should return popular or curated images.
+ * @property {(files: File[], options: MediaLibraryFetchOptions) => Promise<ExternalAsset[]>
+ * } [upload] Function to upload files to the cloud storage service.
+ */
+
+/**
+ * Translation language pair.
+ * @typedef {object} LanguagePair
+ * @property {string} sourceLanguage Source language.
+ * @property {string} targetLanguage Target language.
  */
 
 /**
  * Translate function options.
- * @typedef {object} TranslateOptions
- * @property {string} sourceLocale Source language.
- * @property {string} targetLocale Target language.
+ * @typedef {object} TranslationOptions
+ * @property {string} sourceLanguage Source language.
+ * @property {string} targetLanguage Target language.
  * @property {string} apiKey API authentication key.
  */
 
@@ -231,12 +282,10 @@
  * @property {string} apiKeyURL URL of the page that provides an API key.
  * @property {RegExp} apiKeyPattern API key pattern.
  * @property {boolean} markdownSupported Whether the service supports markdown content.
- * @property {(locale: string) => string | undefined} getSourceLanguage Get a supported source
- * language that matches the given locale code.
- * @property {(locale: string) => string | undefined} getTargetLanguage Get a supported target
- * language that matches the given locale code.
- * @property {(texts: string[], options: TranslateOptions) => Promise<string[]>} translate Function
- * to translate strings.
+ * @property {(options: LanguagePair) => Promise<boolean>} availability Function to check whether
+ * the given source and target languages are supported.
+ * @property {(texts: string[], options: TranslationOptions) => Promise<string[]>} translate
+ * Function to translate strings.
  */
 
 /**
@@ -301,7 +350,7 @@
 /**
  * File info being processed as {@link Entry} or {@link Asset}.
  * @typedef {object} BaseFileListItemProps
- * @property {File} [file] File object. Local backend only.
+ * @property {FileSystemFileHandle} [handle] File handle. Local backend only.
  * @property {string} path File path.
  * @property {string} name File name, without a path.
  * @property {string} sha Git object ID (SHA-1 hash) for the file.
@@ -336,11 +385,15 @@
  * @property {string | undefined} collectionName Collection name or `undefined` for the All Assets
  * and Global Assets folders.
  * @property {string} [fileName] Collection file name. File/singleton collection only.
- * @property {FieldKeyPath} [keyPath] Field key path.
+ * @property {TypedFieldKeyPath} [typedKeyPath] Field key path for a field-level asset folder.
+ * @property {boolean} [isIndexFile] Whether the asset folder is for the special index file used
+ * specifically in Hugo. It works only for field-level asset folders in an entry collection.
  * @property {string | undefined} internalPath Folder path on the repository/filesystem, relative to
  * the project root directory. It can be a partial path if the collection’s `media_folder` property
  * is a relative path, because the complete path is entry-specific in that case. It will be
  * `undefined` for the All Assets folder.
+ * @property {string | undefined} [internalSubPath] Subfolder below the `internalPath`, relative to
+ * the entry folder. It will be set when `entryRelative` is `true`.
  * @property {string | undefined} publicPath Absolute folder path that will appear in the public
  * URL, starting with `/`. It can be empty if the collection’s `public_folder` property is a
  * relative path, because the complete path cannot be easily determined. It will be `undefined` for
@@ -412,14 +465,13 @@
 /**
  * Collection type. A folder collection in Netlify/Decap CMS is called an entry collection in
  * Sveltia CMS. We also support a special singleton collection type that is used for single files
- * not associated with any collection, such as a site configuration file.
+ * not associated with any collection, such as a CMS configuration file.
  * @typedef {'entry' | 'file' | 'singleton'} CollectionType
  */
 
 /**
  * Extra properties for a collection.
  * @typedef {object} CollectionExtraProps
- * @property {CollectionType} _type Collection type.
  * @property {InternalI18nOptions} _i18n Internal i18n configuration combined with the top-level
  * configuration.
  */
@@ -427,6 +479,7 @@
 /**
  * Extra properties for an entry collection.
  * @typedef {object} EntryCollectionExtraProps
+ * @property {Extract<CollectionType, "entry">} _type Collection type.
  * @property {FileConfig} _file Entry file configuration.
  * @property {FieldKeyPath[]} _thumbnailFieldNames A list of field key paths to be used to find an
  * entry thumbnail. See {@link Collection.thumbnail} for details.
@@ -434,24 +487,36 @@
 
 /**
  * An entry collection definition.
- * @typedef {Collection & CollectionExtraProps & EntryCollectionExtraProps} EntryCollection
+ * @typedef {EntryCollection & EntryCollectionExtraProps & CollectionExtraProps
+ * } InternalEntryCollection
  */
 
 /**
  * Extra properties for a file/singleton collection.
  * @typedef {object} FileCollectionExtraProps
+ * @property {Extract<CollectionType, "file" | "singleton">} _type Collection type.
  * @property {Record<string, InternalCollectionFile>} _fileMap File map with normalized collection
  * file definitions. The key is a file identifier.
  */
 
 /**
  * A file/singleton collection definition.
- * @typedef {Collection & CollectionExtraProps & FileCollectionExtraProps} FileCollection
+ * @typedef {FileCollection & FileCollectionExtraProps & CollectionExtraProps
+ * } InternalFileCollection
+ */
+
+/**
+ * A singleton collection definition.
+ * @typedef {object} InternalSingletonCollection
+ * @property {'_singletons'} name Collection name.
+ * @property {string} label Collection label.
+ * @property {string} [label_singular] Singular collection label.
+ * @property {(CollectionFile | CollectionDivider)[]} files Collection files. Can include dividers.
  */
 
 /**
  * A collection definition.
- * @typedef {EntryCollection | FileCollection} InternalCollection
+ * @typedef {InternalEntryCollection | InternalFileCollection} InternalCollection
  */
 
 /**
@@ -568,6 +633,8 @@
 /**
  * Entry draft.
  * @typedef {object} EntryDraft
+ * @property {string} id Unique draft ID. For a new entry, it’s a randomly-generated UUID. For an
+ * existing entry, it’s the same as the corresponding {@link Entry} ID.
  * @property {number} createdAt Timestamp of the draft creation.
  * @property {boolean} isNew `true` if it’s a new entry draft in an entry collection.
  * @property {boolean} isIndexFile Whether the corresponding entry is the collection’s special index
@@ -604,8 +671,10 @@
  * Entry draft backup, which is a subset of {@link EntryDraft} plus metadata.
  * @typedef {object} EntryDraftBackup
  * @property {Date} timestamp When the backup was created.
- * @property {string} siteConfigVersion The SHA-1 hash of the site configuration file, which is used
+ * @property {string} cmsConfigVersion The SHA-1 hash of the CMS configuration file, which is used
  * to verify that the backup can be safely restored.
+ * @property {string} [siteConfigVersion] Replaced by `cmsConfigVersion`. Remove this before the 1.0
+ * release.
  * @property {string} collectionName Collection name.
  * @property {string} slug Entry slug. An empty string for a new entry.
  * @property {LocaleStateMap} currentLocales Current locale state.
@@ -667,7 +736,8 @@
 /**
  * Asset properties.
  * @typedef {object} AssetProps
- * @property {File} [file] File object. Local backend and unsaved files only.
+ * @property {File} [file] File object. Unsaved files only.
+ * @property {FileSystemFileHandle} [handle] File handle. Local backend only.
  * @property {string} [blobURL] Blob URL for the asset. It’s a temporary URL for a remote file being
  * fetched or a local file being uploaded. Or `undefined` if the URL is not generated yet.
  * @property {string} name File name.
@@ -697,6 +767,23 @@
  * @typedef {object} GeoCoordinates
  * @property {number} latitude Latitude in degrees.
  * @property {number} longitude Longitude in degrees.
+ */
+
+/**
+ * Asset library folder map key.
+ * @typedef {'field' | 'entry' | 'file' | 'collection' | 'global'} AssetLibraryFolderMapKey
+ */
+
+/**
+ * Asset library folder map value.
+ * @typedef {object} AssetLibraryFolderMapValue
+ * @property {AssetFolderInfo | undefined} folder Asset folder info.
+ * @property {boolean} enabled Whether the folder is enabled.
+ */
+
+/**
+ * Information about all the default asset library folders and whether these are enabled.
+ * @typedef {Record<AssetLibraryFolderMapKey, AssetLibraryFolderMapValue>} AssetLibraryFolderMap
  */
 
 /**
@@ -839,7 +926,7 @@
 
 /**
  * Context for a field, which may change the behavior of the editor/preview.
- * @typedef {'markdown-editor-component' | 'single-field-list-widget'} WidgetContext
+ * @typedef {'markdown-editor-component' | 'single-subfield-list-widget'} WidgetContext
  */
 
 /**
@@ -856,6 +943,7 @@
  * @typedef {object} WidgetEditorProps
  * @property {InternalLocaleCode} locale Current pane’s locale.
  * @property {FieldKeyPath} keyPath Field key path.
+ * @property {TypedFieldKeyPath} typedKeyPath Typed field key path.
  * @property {string} fieldId Field ID.
  * @property {string} fieldLabel Field label.
  * @property {boolean} [required] Whether to mark the field required.
@@ -868,6 +956,7 @@
  * @typedef {object} WidgetPreviewProps
  * @property {InternalLocaleCode} locale Current pane’s locale.
  * @property {FieldKeyPath} keyPath Field key path.
+ * @property {TypedFieldKeyPath} typedKeyPath Typed field key path.
  */
 
 /**
@@ -898,7 +987,7 @@
  * Select/Relation field editor’s selector option.
  * @typedef {object} SelectFieldSelectorOption
  * @property {string} label Option label.
- * @property {any} value Option value.
+ * @property {SelectFieldValue} value Option value.
  * @property {string} [searchValue] Option value specifically for filtering.
  */
 
@@ -970,9 +1059,63 @@
  * @property {string} [componentName] Markdown editor component name.
  * @property {FlattenedEntryContent} [valueMap] Object holding current entry values. This is
  * required when working with list/object widget variable types.
- * @property {FieldKeyPath} keyPath Key path, e.g. `author.name`.
+ * @property {FieldKeyPath | TypedFieldKeyPath} keyPath Field key path or typed key path.
  * @property {boolean} [isIndexFile] Whether the corresponding entry is the collection’s special
  * index file used specifically in Hugo.
+ */
+
+/**
+ * Context for config parsing.
+ * @typedef {object} ConfigParserContext
+ * @property {CmsConfig} [cmsConfig] Raw site config to parse.
+ * @property {Collection | InternalSingletonCollection} [collection] Collection config to parse.
+ * @property {CollectionFile} [collectionFile] File config to parse.
+ * @property {string} [componentName] Name of the editor component.
+ * @property {boolean} [isIndexFile] Whether the field is part of an index file.
+ * @property {TypedFieldKeyPath} [typedKeyPath] Key path to the field being parsed.
+ */
+
+/**
+ * Collected Media field during config parsing. It will be processed later to enable field-specific
+ * asset folders.
+ * @typedef {object} CollectedMediaField
+ * @property {MediaField} fieldConfig File/Image field config.
+ * @property {ConfigParserContext} context Field parser context.
+ */
+
+/**
+ * Collected Relation field during config parsing. It will be processed later to enable reverse
+ * reference lookups.
+ * @typedef {object} CollectedRelationField
+ * @property {RelationField} fieldConfig Relation field config.
+ * @property {ConfigParserContext} context Field parser context.
+ */
+
+/**
+ * Collectors used during config parsing.
+ * @typedef {object} ConfigParserCollectors
+ * @property {Set<string>} errors Collected error messages.
+ * @property {Set<string>} warnings Collected warning messages.
+ * @property {Set<CollectedMediaField>} mediaFields Collected media fields.
+ * @property {Set<CollectedRelationField>} relationFields Collected relation fields.
+ */
+
+/**
+ * Arguments for a field parser function.
+ * @typedef {object} FieldParserArgs
+ * @property {Field} config Field configuration.
+ * @property {ConfigParserContext} context Field parser context.
+ * @property {ConfigParserCollectors} collectors Collectors to collect messages and special fields.
+ */
+
+/**
+ * @typedef {object} UnsupportedOption
+ * @property {'error' | 'warning'} [type] Message type. Default: `error`.
+ * @property {string} prop Property name.
+ * @property {string} [newProp] New property name if renamed.
+ * @property {any} [value] Unsupported property value.
+ * @property {string} [strKey] The i18n string key for the message. Default:
+ * `unsupported_deprecated_option`.
  */
 
 export {};

@@ -4,18 +4,19 @@
   import { previews } from '$lib/components/contents/details/widgets';
   import { entryDraft } from '$lib/services/contents/draft';
   import { getExpanderKeys, syncExpanderStates } from '$lib/services/contents/editor/expanders';
+  import { isFieldMultiple } from '$lib/services/contents/entry/fields';
   import { DEFAULT_I18N_CONFIG } from '$lib/services/contents/i18n/config';
-  import { MULTI_VALUE_WIDGETS } from '$lib/services/contents/widgets';
 
   /**
-   * @import { InternalLocaleCode } from '$lib/types/private';
-   * @import { Field, FieldKeyPath, MultiValueField } from '$lib/types/public';
+   * @import { InternalLocaleCode, TypedFieldKeyPath } from '$lib/types/private';
+   * @import { Field, FieldKeyPath, VisibleField } from '$lib/types/public';
    */
 
   /**
    * @typedef {object} Props
    * @property {InternalLocaleCode} locale Current pane’s locale.
    * @property {FieldKeyPath} keyPath Field key path.
+   * @property {TypedFieldKeyPath} typedKeyPath Typed field key path.
    * @property {Field} fieldConfig Field configuration.
    */
 
@@ -24,20 +25,14 @@
     /* eslint-disable prefer-const */
     locale,
     keyPath,
+    typedKeyPath,
     fieldConfig,
     /* eslint-enable prefer-const */
   } = $props();
 
-  const {
-    name: fieldName,
-    label = '',
-    widget: widgetName = 'string',
-    preview = true,
-    i18n = false,
-  } = $derived(fieldConfig);
-  const { multiple = false } = $derived(
-    /** @type {MultiValueField} */ (MULTI_VALUE_WIDGETS.includes(widgetName) ? fieldConfig : {}),
-  );
+  const { name: fieldName, widget: widgetName = 'string', i18n = false } = $derived(fieldConfig);
+  const { label = '', preview = true } = $derived(/** @type {VisibleField} */ (fieldConfig));
+  const multiple = $derived(isFieldMultiple(fieldConfig));
   const isList = $derived(widgetName === 'list' || multiple);
   const isIndexFile = $derived($entryDraft?.isIndexFile ?? false);
   const collection = $derived($entryDraft?.collection);
@@ -102,6 +97,7 @@
     role="group"
     data-widget={widgetName}
     data-key-path={keyPath}
+    data-typed-key-path={typedKeyPath}
     tabindex="0"
     onkeydown={(event) => {
       if (event.key === 'Enter') {
@@ -117,7 +113,7 @@
     <h4>{label || fieldName}</h4>
     {#if widgetName in previews}
       {@const Preview = previews[widgetName]}
-      <Preview {keyPath} {locale} {fieldConfig} {currentValue} />
+      <Preview {keyPath} {typedKeyPath} {locale} {fieldConfig} {currentValue} />
     {/if}
   </section>
 {/if}
@@ -151,6 +147,20 @@
 
       img {
         max-height: 800px !important;
+      }
+    }
+  }
+
+  @media (width < 768px) {
+    :global([role='document']) {
+      & > section:is([data-widget='file'], [data-widget='image']):has(:global(img)),
+      & > section:is([data-widget='string']):has(:global(iframe)) {
+        overflow: visible;
+      }
+
+      & > section:is([data-widget='file'], [data-widget='image']) :global(img) {
+        width: 100%;
+        max-height: none !important;
       }
     }
   }

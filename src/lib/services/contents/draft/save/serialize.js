@@ -4,7 +4,7 @@ import { unflatten } from 'flat';
 import { TomlDate } from 'smol-toml';
 import { get } from 'svelte/store';
 
-import { siteConfig } from '$lib/services/config';
+import { cmsConfig } from '$lib/services/config';
 import { createKeyPathList } from '$lib/services/contents/draft/save/key-path';
 import { getField, isFieldRequired } from '$lib/services/contents/entry/fields';
 import { parseDateTimeConfig } from '$lib/services/contents/widgets/date-time/helper';
@@ -13,14 +13,28 @@ import { FULL_DATE_TIME_REGEX } from '$lib/services/utils/date';
 
 /**
  * @import {
- * EntryCollection,
  * EntryDraft,
  * FlattenedEntryContent,
+ * InternalEntryCollection,
  * InternalLocaleCode,
  * RawEntryContent,
  * } from '$lib/types/private';
  * @import { DateTimeField, Field } from '$lib/types/public';
  */
+
+/**
+ * Check whether a value is empty, such as `undefined`, `null`, an empty string, an empty array, or
+ * an empty object.
+ * @param {any} value Value to check.
+ * @returns {boolean} Whether the value is empty.
+ */
+export const isValueEmpty = (value) =>
+  // Don’t use `!value` as `false` and `0` are valid values
+  value === undefined ||
+  value === null ||
+  value === '' ||
+  (Array.isArray(value) && !value.length) ||
+  (isObject(value) && !Object.keys(value).length);
 
 /**
  * Move a property name/value from a unsorted property map to a sorted property map.
@@ -73,9 +87,7 @@ export const copyProperty = ({
     field &&
     !isFieldRequired({ fieldConfig: field, locale }) &&
     !Object.keys(unsortedMap).some((_key) => _key.startsWith(`${key}.`)) &&
-    (!value ||
-      (Array.isArray(value) && !value.length) ||
-      (isObject(value) && !Object.keys(value).length))
+    isValueEmpty(value)
   ) {
     // Omit the empty value
   } else {
@@ -117,7 +129,7 @@ const finalizeContent = ({
   const sortedMap = {};
 
   const { omit_empty_optional_fields: omitEmptyOptionalFields = false } =
-    get(siteConfig)?.output ?? {};
+    get(cmsConfig)?.output ?? {};
 
   const getFieldArgs = { collectionName, fileName, valueMap, isIndexFile };
   const copyArgs = { locale, unsortedMap, sortedMap, isTomlOutput, omitEmptyOptionalFields };
@@ -185,7 +197,9 @@ export const serializeContent = ({ draft, locale, valueMap }) => {
     _i18n: {
       canonicalSlug: { key: canonicalSlugKey },
     },
-  } = collectionFile ?? /** @type {EntryCollection} */ (collection);
+  } = collectionFile ?? /** @type {InternalEntryCollection} */ (collection);
+
+  const isTomlOutput = ['toml', 'toml-frontmatter'].includes(_file.format);
 
   const content = finalizeContent({
     collectionName,
@@ -195,11 +209,12 @@ export const serializeContent = ({ draft, locale, valueMap }) => {
     valueMap,
     canonicalSlugKey,
     isIndexFile,
-    isTomlOutput: ['toml', 'toml-frontmatter'].includes(_file.format),
+    isTomlOutput,
   });
 
-  // Handle a special case: top-level list field
-  if (hasRootListField(fields)) {
+  // Handle a special case: top-level list field. TOML doesn’t support top-level arrays, so we
+  // ignore the `root` option for such cases.
+  if (!isTomlOutput && hasRootListField(fields)) {
     return content[fields[0].name] ?? [];
   }
 

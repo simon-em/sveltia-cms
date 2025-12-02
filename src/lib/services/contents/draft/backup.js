@@ -4,7 +4,7 @@ import { IndexedDB } from '@sveltia/utils/storage';
 import { get, writable } from 'svelte/store';
 
 import { backend } from '$lib/services/backends';
-import { siteConfigVersion } from '$lib/services/config';
+import { cmsConfigVersion } from '$lib/services/config';
 import { entryDraft, entryDraftModified, i18nAutoDupEnabled } from '$lib/services/contents/draft';
 import { createProxy } from '$lib/services/contents/draft/create/proxy';
 import { prefs } from '$lib/services/user/prefs';
@@ -38,9 +38,10 @@ const BACKUP_TOAST_DEFAULT_STATE = {
 };
 
 /**
- * @type {Writable<{ show: boolean, timestamp?: Date, resolve?: Function }>}
+ * @type {Writable<{ show: boolean, timestamp?: Date, resolve?: (value?: boolean) => void }>}
  */
 export const restoreDialogState = writable({ show: false });
+
 /**
  * @type {Writable<{ saved: boolean, restored: boolean, deleted: boolean }>}
  */
@@ -70,11 +71,12 @@ export const getBackup = async (collectionName, slug = '') => {
     return null;
   }
 
-  if (backup.siteConfigVersion === get(siteConfigVersion)) {
+  // @todo Remove the legacy `siteConfigVersion` check prior to the 1.0 release
+  if ((backup.siteConfigVersion ?? backup.cmsConfigVersion) === get(cmsConfigVersion)) {
     return backup;
   }
 
-  // Discard the backup if the site configuration has been changed since the backup was created,
+  // Discard the backup if the CMS configuration has been changed since the backup was created,
   // because there is a risk of data corruption
   await deleteBackup(collectionName, slug);
 
@@ -106,7 +108,7 @@ export const saveBackup = async (draft) => {
     /** @type {EntryDraftBackup} */
     const backup = {
       timestamp: new Date(),
-      siteConfigVersion: /** @type {string} */ (get(siteConfigVersion)),
+      cmsConfigVersion: /** @type {string} */ (get(cmsConfigVersion)),
       collectionName,
       slug,
       currentLocales,
@@ -127,12 +129,13 @@ export const saveBackup = async (draft) => {
 
 /**
  * Restore a draft backup to the current entry draft.
+ * @internal
  * @param {object} args Arguments.
  * @param {EntryDraftBackup} args.backup Backup to restore.
  * @param {string} args.collectionName Collection name.
  * @param {string} [args.fileName] Collection file name. File/singleton collection only.
  */
-const restoreBackup = ({ backup, collectionName, fileName }) => {
+export const restoreBackup = ({ backup, collectionName, fileName }) => {
   const { currentLocales, currentSlugs, currentValues, files } = backup;
   const fileURLs = new Map();
 

@@ -9,7 +9,7 @@ import { get } from 'svelte/store';
 
 import { allAssets } from '$lib/services/assets';
 import { allAssetFolders } from '$lib/services/assets/folders';
-import { parseAssetFiles } from '$lib/services/assets/parser';
+import { getAssetKind } from '$lib/services/assets/kinds';
 import { GIT_CONFIG_FILE_REGEX, gitConfigFiles } from '$lib/services/backends/git/shared/config';
 import { createFileList } from '$lib/services/backends/process';
 import { allEntries, allEntryFolders, dataLoaded, entryParseErrors } from '$lib/services/contents';
@@ -18,6 +18,10 @@ import { createPathRegEx, getBlob, getGitHash } from '$lib/services/utils/file';
 
 /**
  * @import {
+ * Asset,
+ * BaseAssetListItem,
+ * BaseConfigListItem,
+ * BaseEntryListItem,
  * BaseFileListItem,
  * BaseFileListItemProps,
  * CommitResults,
@@ -26,11 +30,15 @@ import { createPathRegEx, getBlob, getGitHash } from '$lib/services/utils/file';
  */
 
 /**
- * @typedef {{ file: File, path: string }} FileListItem
+ * File handle item containing metadata and handle reference.
+ * @typedef {object} FileHandleItem
+ * @property {FileSystemFileHandle} handle File system handle.
+ * @property {string} path Path to the file.
  */
 
 /**
  * Get a file or directory handle at the given path.
+ * @internal
  * @param {FileSystemDirectoryHandle} rootDirHandle Root directory handle.
  * @param {string} path Path to the file/directory.
  * @param {'file' | 'directory'} [type] Type of the handle to retrieve.
@@ -39,7 +47,7 @@ import { createPathRegEx, getBlob, getGitHash } from '$lib/services/utils/file';
  * @see https://developer.mozilla.org/en-US/docs/Web/API/FileSystemDirectoryHandle/getFileHandle
  * @see https://developer.mozilla.org/en-US/docs/Web/API/FileSystemDirectoryHandle/getDirectoryHandle
  */
-const getHandleByPath = async (rootDirHandle, path, type = 'file') => {
+export const getHandleByPath = async (rootDirHandle, path, type = 'file') => {
   const normalizedPath = stripSlashes(path ?? '');
   /** @type {FileSystemFileHandle | FileSystemDirectoryHandle} */
   let handle = rootDirHandle;
@@ -93,23 +101,26 @@ export const getDirectoryHandle = (rootDirHandle, path) =>
 
 /**
  * Create a regular expression that matches the given path, taking template tags into account.
+ * @internal
  * @param {string} path Path.
  * @returns {RegExp} RegEx.
  */
-const getPathRegex = (path) =>
+export const getPathRegex = (path) =>
   createPathRegEx(path, (segment) => segment.replace(/{{.+?}}/, '.+?'));
 
 /**
  * Retrieve all the files under the given directory recursively.
- * @param {FileSystemDirectoryHandle | any} dirHandle Directory handle.
+ * @internal
+ * @param {FileSystemDirectoryHandle} dirHandle Directory handle.
  * @param {object} context Context object.
  * @param {FileSystemDirectoryHandle} context.rootDirHandle Root directory handle.
  * @param {string[]} context.scanningPaths Scanning paths.
  * @param {RegExp[]} context.scanningPathsRegEx Regular expressions for scanning paths.
- * @param {FileListItem[]} context.fileList List of available files.
+ * @param {FileHandleItem[]} context.fileHandles List of available file handles.
+ * @param {string} [currentPath] Current directory path (for recursion).
  */
-const scanDir = async (dirHandle, context) => {
-  const { rootDirHandle, scanningPaths, scanningPathsRegEx, fileList } = context;
+export const scanDir = async (dirHandle, context, currentPath = '') => {
+  const { scanningPaths, scanningPathsRegEx, fileHandles } = context;
 
   for await (const [name, handle] of dirHandle.entries()) {
     // Skip hidden files and directories, except for Git configuration files
@@ -117,142 +128,179 @@ const scanDir = async (dirHandle, context) => {
       continue;
     }
 
-    const path = (await rootDirHandle.resolve(handle))?.join('/') ?? '';
+    const path = currentPath ? `${currentPath}/${name}` : name;
     const hasMatchingPath = scanningPathsRegEx.some((regex) => regex.test(path));
 
-    if (handle.kind === 'file') {
-      if (!hasMatchingPath) {
-        continue;
-      }
-
-      try {
-        /** @type {File} */
-        let file = await handle.getFile();
-        const { type, lastModified } = file;
-
-        // Clone the file immediately to avoid potential permission problems
-        file = new File([file], file.name, { type, lastModified });
-
-        fileList.push({ file, path });
-      } catch (ex) {
-        // eslint-disable-next-line no-console
-        console.error(ex);
-      }
+    if (handle.kind === 'file' && hasMatchingPath) {
+      // Store only the handle and path. Metadata will be extracted later when needed, avoiding
+      // memory leaks from holding multiple file references during directory scanning.
+      fileHandles.push({
+        // eslint-disable-next-line object-shorthand
+        handle: /** @type {FileSystemFileHandle} */ (handle),
+        path,
+      });
     }
 
     if (handle.kind === 'directory') {
       const regex = getPathRegex(path);
 
-      if (!hasMatchingPath && !scanningPaths.some((p) => regex.test(p))) {
-        continue;
+      if (hasMatchingPath || scanningPaths.some((p) => regex.test(p))) {
+        await scanDir(/** @type {FileSystemDirectoryHandle} */ (handle), context, path);
       }
-
-      await scanDir(handle, context);
     }
   }
 };
 
 /**
- * Normalize a file list item to ensure it has the required properties. This function also computes
- * the SHA-1 hash of the file. The file path and name must be normalized, as certain non-ASCII
- * characters (e.g. Japanese) can be problematic particularly on macOS.
- * @param {FileListItem} fileListItem File list item.
- * @returns {Promise<BaseFileListItemProps>} Normalized file list item.
+ * Collect all scanning paths from entry and asset folders.
+ * @internal
+ * @returns {string[]} Unique list of normalized scanning paths.
  */
-const normalizeFileListItem = async ({ file, path }) => ({
-  file,
-  path: path.normalize(),
-  name: file.name.normalize(),
-  size: file.size,
-  sha: await getGitHash(file),
-});
+export const collectScanningPaths = () => {
+  const entryPaths = get(allEntryFolders)
+    .map(({ filePathMap, folderPathMap }) =>
+      filePathMap ? Object.values(filePathMap) : Object.values(folderPathMap ?? {}),
+    )
+    .flat(1);
+
+  const assetPaths = get(allAssetFolders)
+    .filter(({ internalPath }) => internalPath !== undefined)
+    .map(({ internalPath }) => internalPath);
+
+  return unique([...entryPaths, ...assetPaths].map((path) => stripSlashes(path ?? '')));
+};
 
 /**
  * Retrieve all files under the static directory.
+ * @internal
  * @param {FileSystemDirectoryHandle} rootDirHandle Root directory handle.
  * @returns {Promise<BaseFileListItemProps[]>} File list.
  */
-const getAllFiles = async (rootDirHandle) => {
-  /** @type {FileListItem[]} */
-  const fileList = [];
-
-  /** @type {string[]} */
-  const scanningPaths = unique(
-    [
-      ...get(allEntryFolders)
-        .map(({ filePathMap, folderPathMap }) =>
-          filePathMap ? Object.values(filePathMap) : Object.values(folderPathMap ?? {}),
-        )
-        .flat(1),
-      ...get(allAssetFolders)
-        .filter(({ internalPath }) => internalPath !== undefined)
-        .map(({ internalPath }) => internalPath),
-    ].map((path) => stripSlashes(path ?? '')),
-  );
+export const getAllFiles = async (rootDirHandle) => {
+  /** @type {FileHandleItem[]} */
+  const fileHandles = [];
+  const scanningPaths = collectScanningPaths();
 
   await scanDir(rootDirHandle, {
     rootDirHandle,
     scanningPaths,
     scanningPathsRegEx: scanningPaths.map(getPathRegex),
-    fileList,
+    fileHandles,
   });
 
-  return Promise.all(fileList.map(normalizeFileListItem));
+  return fileHandles.map(({ handle, path }) => ({
+    handle,
+    path: path.normalize(),
+    name: handle.name.normalize(),
+    size: 0, // Will be populated later
+    sha: '', // Will be populated later
+  }));
 };
 
 /**
- * Read text content from a file and store it in the entry file object.
- * @param {BaseFileListItem} entryFile Entry file object to read text from.
+ * Parse text file info to create a complete entry or config file object.
+ * @internal
+ * @param {BaseFileListItem} fileInfo Entry or config file info.
+ * @returns {Promise<BaseFileListItem>} Entry or config file with text content. We don’t populate
+ * `size` and `sha` for entries and config files, as they are not needed.
  */
-const readTextFile = async (entryFile) => {
-  const { name, file } = entryFile;
+export const parseTextFileInfo = async (fileInfo) => {
+  const { name, handle } = fileInfo;
 
   // Skip `.gitkeep` file, as we don’t need to read its content
   if (name === '.gitkeep') {
-    return;
+    return fileInfo;
   }
 
   try {
-    entryFile.text = await readAsText(/** @type {File} */ (file));
+    const file = await /** @type {FileSystemFileHandle} */ (handle).getFile();
+    const text = await readAsText(file);
+
+    return { ...fileInfo, text };
   } catch (ex) {
-    entryFile.text = '';
     // eslint-disable-next-line no-console
     console.error(ex);
+
+    return { ...fileInfo, text: '' };
   }
 };
 
 /**
- * Load file list and all the entry files from the file system, then cache them in the
- * {@link allEntries} and {@link allAssets} stores.
+ * Parse asset file info to create a complete asset object.
+ * @internal
+ * @param {BaseAssetListItem} fileInfo Asset file info.
+ * @returns {Promise<Asset>} Asset object.
+ */
+export const parseAssetFileInfo = async (fileInfo) => {
+  const { name, handle } = fileInfo;
+  const kind = getAssetKind(name);
+
+  try {
+    const file = await /** @type {FileSystemFileHandle} */ (handle).getFile();
+    const { size } = file;
+    const sha = await getGitHash(file);
+
+    return { ...fileInfo, kind, size, sha };
+  } catch (ex) {
+    // eslint-disable-next-line no-console
+    console.error(ex);
+
+    return { ...fileInfo, kind };
+  }
+};
+
+/**
+ * Load file list and all the entry files from the file system, then cache them in the stores.
  * @param {FileSystemDirectoryHandle} rootDirHandle Root directory handle.
  */
 export const loadFiles = async (rootDirHandle) => {
   const { entryFiles, assetFiles, configFiles } = createFileList(await getAllFiles(rootDirHandle));
+  /** @type {BaseEntryListItem[]} */
+  const entryFileItems = [];
+  /** @type {BaseConfigListItem[]} */
+  const configFileItems = [];
 
-  await Promise.all([...entryFiles, ...configFiles].map(readTextFile));
+  // Avoid using `Promise.all` to prevent concurrent file reads that can lead to memory leaks,
+  // especially on Linux systems with a large number of files.
+  // @see https://github.com/sveltia/sveltia-cms/issues/224
+  for (const fileInfo of entryFiles) {
+    entryFileItems.push(/** @type {BaseEntryListItem} */ (await parseTextFileInfo(fileInfo)));
+  }
 
-  const { entries, errors } = await prepareEntries(entryFiles);
+  for (const fileInfo of configFiles) {
+    configFileItems.push(/** @type {BaseConfigListItem} */ (await parseTextFileInfo(fileInfo)));
+  }
+
+  const { entries, errors } = await prepareEntries(entryFileItems);
+  /** @type {Asset[]} */
+  const assets = [];
+
+  for (const fileInfo of assetFiles) {
+    assets.push(await parseAssetFileInfo(fileInfo));
+  }
 
   allEntries.set(entries);
-  allAssets.set(parseAssetFiles(assetFiles));
-  gitConfigFiles.set(configFiles);
+  allAssets.set(assets);
+  gitConfigFiles.set(configFileItems);
   entryParseErrors.set(errors);
   dataLoaded.set(true);
 };
 
 /**
  * Move a file from a previous path to a new path within the file system.
+ * @internal
  * @param {object} args Arguments.
  * @param {FileSystemDirectoryHandle} args.rootDirHandle Root directory handle.
  * @param {string} args.previousPath The current path of the file to move.
  * @param {string} args.path The new path where the file should be moved.
  * @returns {Promise<FileSystemFileHandle>} Moved file handle.
  */
-const moveFile = async ({ rootDirHandle, previousPath, path }) => {
+export const moveFile = async ({ rootDirHandle, previousPath, path }) => {
   const { dirname, basename } = getPathInfo(path);
+  const previousDirname = getPathInfo(previousPath).dirname;
   const fileHandle = await getFileHandle(rootDirHandle, previousPath);
 
-  if (dirname && dirname !== getPathInfo(previousPath).dirname) {
+  if (dirname && dirname !== previousDirname) {
     await fileHandle.move(await getDirectoryHandle(rootDirHandle, dirname), basename);
   } else {
     await fileHandle.move(basename);
@@ -263,6 +311,7 @@ const moveFile = async ({ rootDirHandle, previousPath, path }) => {
 
 /**
  * Write data to a file at the specified path.
+ * @internal
  * @param {object} args Arguments.
  * @param {FileSystemDirectoryHandle} args.rootDirHandle Root directory handle.
  * @param {FileSystemFileHandle} [args.fileHandle] File handle to write to. Provided if the file has
@@ -271,7 +320,7 @@ const moveFile = async ({ rootDirHandle, previousPath, path }) => {
  * @param {string | File} args.data The data to write to the file.
  * @returns {Promise<File>} Written file.
  */
-const writeFile = async ({ rootDirHandle, fileHandle, path, data }) => {
+export const writeFile = async ({ rootDirHandle, fileHandle, path, data }) => {
   fileHandle ??= await getFileHandle(rootDirHandle, path);
 
   // The `createWritable` method is not yet supported by Safari
@@ -296,40 +345,39 @@ const writeFile = async ({ rootDirHandle, fileHandle, path, data }) => {
 
 /**
  * Recursively delete empty parent directories.
+ * @internal
  * @param {FileSystemDirectoryHandle} rootDirHandle Root directory handle.
  * @param {string[]} pathSegments Array of directory path segments.
  */
-const deleteEmptyParentDirs = async (rootDirHandle, pathSegments) => {
-  let dirHandle = await getDirectoryHandle(rootDirHandle, pathSegments.join('/'));
+export const deleteEmptyParentDirs = async (rootDirHandle, pathSegments) => {
+  // Start from the deepest directory
+  for (let i = pathSegments.length; i > 0; i -= 1) {
+    const currentPath = pathSegments.slice(0, i).join('/');
+    const dirHandle = await getDirectoryHandle(rootDirHandle, currentPath);
+    const keys = await Array.fromAsync(dirHandle.keys());
 
-  for (;;) {
-    /** @type {string[]} */
-    const keys = [];
-
-    for await (const key of dirHandle.keys()) {
-      keys.push(key);
-    }
-
-    if (keys.length > 1 || !pathSegments.length) {
+    // If directory is not empty, stop
+    if (keys.length > 0) {
       break;
     }
 
-    const dirName = /** @type {string} */ (pathSegments.pop());
+    // Get parent directory and remove the empty directory
+    const dirName = pathSegments[i - 1];
+    const parentPath = pathSegments.slice(0, i - 1).join('/');
+    const parentHandle = await getDirectoryHandle(rootDirHandle, parentPath);
 
-    // Get the parent directory handle
-    dirHandle = await getDirectoryHandle(rootDirHandle, pathSegments.join('/'));
-
-    await dirHandle.removeEntry(dirName);
+    await parentHandle.removeEntry(dirName);
   }
 };
 
 /**
  * Delete a file at the specified path within the file system.
+ * @internal
  * @param {object} args Arguments.
  * @param {FileSystemDirectoryHandle} args.rootDirHandle Root directory handle.
  * @param {string} args.path The path to the file to be deleted.
  */
-const deleteFile = async ({ rootDirHandle, path }) => {
+export const deleteFile = async ({ rootDirHandle, path }) => {
   const { dirname: dirPath = '', basename: fileName } = getPathInfo(stripSlashes(path));
   const dirHandle = await getDirectoryHandle(rootDirHandle, dirPath);
 
@@ -342,12 +390,13 @@ const deleteFile = async ({ rootDirHandle, path }) => {
 
 /**
  * Save a file to the file system based on the provided change options.
+ * @internal
  * @param {FileSystemDirectoryHandle} rootDirHandle Root directory handle.
  * @param {FileChange} change File change options.
  * @returns {Promise<?File>} Created or updated file, if available.
  * @throws {Error} If an error occurs while saving the file.
  */
-const saveChange = async (rootDirHandle, { action, path, previousPath, data }) => {
+export const saveChange = async (rootDirHandle, { action, path, previousPath, data }) => {
   /** @type {FileSystemFileHandle | undefined} */
   let fileHandle;
 
@@ -398,11 +447,11 @@ export const saveChanges = async (rootDirHandle, changes) => {
       }
 
       if (!file) {
-        if (data !== undefined) {
-          file = getBlob(data);
-        } else {
+        if (data === undefined) {
           return null;
         }
+
+        file = getBlob(data);
       }
 
       return [path, { file, sha: await getGitHash(file) }];

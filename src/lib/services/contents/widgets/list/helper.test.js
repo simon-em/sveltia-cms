@@ -1,18 +1,18 @@
 import { writable } from 'svelte/store';
 import { beforeAll, describe, expect, test, vi } from 'vitest';
 
-import { formatSummary, getListFieldInfo } from './helper';
+import { formatSummary, getListFieldInfo, hasRootListField } from './helper';
 
 vi.mock('$lib/services/config');
 
 describe('Test formatSummary() — comprehensive tests', () => {
   describe('Multiple fields configuration', () => {
-    let siteConfig;
+    let cmsConfig;
 
     beforeAll(async () => {
       const configModule = await import('$lib/services/config');
 
-      siteConfig = writable({
+      cmsConfig = writable({
         backend: { name: 'github' },
         media_folder: 'static/uploads',
         collections: [
@@ -39,7 +39,7 @@ describe('Test formatSummary() — comprehensive tests', () => {
         ],
       });
       // @ts-ignore
-      configModule.siteConfig = siteConfig;
+      configModule.cmsConfig = cmsConfig;
     });
 
     const baseArgs = {
@@ -340,7 +340,7 @@ describe('Test formatSummary() — comprehensive tests', () => {
       collectionCacheMap.clear();
 
       // @ts-ignore
-      (await import('$lib/services/config')).siteConfig = writable({
+      (await import('$lib/services/config')).cmsConfig = writable({
         backend: { name: 'github' },
         media_folder: 'static/uploads',
         collections: [
@@ -608,5 +608,85 @@ describe('Test getListFieldInfo()', () => {
       hasVariableTypes: true,
       hasSubFields: true,
     });
+  });
+});
+
+describe('Test hasRootListField()', () => {
+  test('should return true for single list field with root option enabled', () => {
+    /** @type {import('$lib/types/public').Field[]} */
+    const fields = [
+      {
+        name: 'items',
+        widget: 'list',
+        root: true,
+        fields: [],
+      },
+    ];
+
+    expect(hasRootListField(fields)).toBe(true);
+  });
+
+  test('should return false when root option is false', () => {
+    /** @type {import('$lib/types/public').Field[]} */
+    const fields = [
+      {
+        name: 'items',
+        widget: 'list',
+        root: false,
+        fields: [],
+      },
+    ];
+
+    expect(hasRootListField(fields)).toBe(false);
+  });
+
+  test('should return false when root option is undefined', () => {
+    /** @type {import('$lib/types/public').Field[]} */
+    const fields = [
+      {
+        name: 'items',
+        widget: 'list',
+        fields: [],
+      },
+    ];
+
+    expect(hasRootListField(fields)).toBe(false);
+  });
+
+  test('should return false when there are multiple fields', () => {
+    /** @type {import('$lib/types/public').Field[]} */
+    const fields = [
+      {
+        name: 'items',
+        widget: 'list',
+        root: true,
+        fields: [],
+      },
+      {
+        name: 'other',
+        widget: 'string',
+      },
+    ];
+
+    expect(hasRootListField(fields)).toBe(false);
+  });
+
+  test('should return false when field is not a list widget', () => {
+    /** @type {import('$lib/types/public').Field[]} */
+    const fields = [
+      {
+        name: 'title',
+        widget: 'string',
+      },
+    ];
+
+    expect(hasRootListField(fields)).toBe(false);
+  });
+
+  test('should return false for empty fields array', () => {
+    /** @type {import('$lib/types/public').Field[]} */
+    const fields = [];
+
+    expect(hasRootListField(fields)).toBe(false);
   });
 });

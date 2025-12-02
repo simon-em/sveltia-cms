@@ -2,8 +2,8 @@
   import { Menu, MenuButton, MenuItem, Spacer } from '@sveltia/ui';
   import { escapeRegExp } from '@sveltia/utils/string';
   import equal from 'fast-deep-equal';
-  import DOMPurify from 'isomorphic-dompurify';
-  import { marked } from 'marked';
+  import { sanitize } from 'isomorphic-dompurify';
+  import { parseInline } from 'marked';
   import { getContext, setContext } from 'svelte';
   import { writable } from 'svelte/store';
   import { _ } from 'svelte-i18n';
@@ -15,9 +15,9 @@
   import { editors } from '$lib/components/contents/details/widgets';
   import { entryDraft } from '$lib/services/contents/draft';
   import { revertChanges } from '$lib/services/contents/draft/update/revert';
-  import { isFieldRequired } from '$lib/services/contents/entry/fields';
+  import { isFieldMultiple, isFieldRequired } from '$lib/services/contents/entry/fields';
   import { DEFAULT_I18N_CONFIG } from '$lib/services/contents/i18n/config';
-  import { MIN_MAX_VALUE_WIDGETS, MULTI_VALUE_WIDGETS } from '$lib/services/contents/widgets';
+  import { MIN_MAX_VALUE_WIDGETS } from '$lib/services/contents/widgets';
   import { getListFieldInfo } from '$lib/services/contents/widgets/list/helper';
 
   /**
@@ -25,9 +25,9 @@
    * @import { Writable } from 'svelte/store';
    * @import {
    * DraftValueStoreKey,
-   * EntryDraft,
    * FieldEditorContext,
    * InternalLocaleCode,
+   * TypedFieldKeyPath,
    * WidgetContext,
    * } from '$lib/types/private';
    * @import {
@@ -36,10 +36,10 @@
    * FieldKeyPath,
    * ListField,
    * MinMaxValueField,
-   * MultiValueField,
    * NumberField,
    * StringField,
    * TextField,
+   * VisibleField,
    * } from '$lib/types/public';
    */
 
@@ -50,6 +50,7 @@
    * @typedef {object} Props
    * @property {InternalLocaleCode} locale Current pane’s locale.
    * @property {FieldKeyPath} keyPath Field key path.
+   * @property {TypedFieldKeyPath} typedKeyPath Typed field key path.
    * @property {Field} fieldConfig Field configuration.
    * @property {WidgetContext} [context] Where the widget is rendered.
    * @property {DraftValueStoreKey} [valueStoreKey] Key to store the values in {@link EntryDraft}.
@@ -60,6 +61,7 @@
     /* eslint-disable prefer-const */
     locale,
     keyPath,
+    typedKeyPath,
     fieldConfig,
     context: widgetContext = parent.widgetContext ?? undefined,
     valueStoreKey = parent.valueStoreKey ?? 'currentValues',
@@ -73,8 +75,8 @@
    * @param {string} str Original string.
    * @returns {string} Sanitized string.
    */
-  const sanitize = (str) =>
-    DOMPurify.sanitize(/** @type {string} */ (marked.parseInline(str.replaceAll('\\n', '<br>'))), {
+  const _sanitize = (str) =>
+    sanitize(/** @type {string} */ (parseInline(str.replaceAll('\\n', '<br>'))), {
       ALLOWED_TAGS: ['strong', 'em', 'del', 'code', 'a', 'br'],
       ALLOWED_ATTR: ['href'],
     });
@@ -88,25 +90,22 @@
   );
 
   const inEditorComponent = $derived(widgetContext === 'markdown-editor-component');
+  const { name: fieldName, widget: widgetName = 'string', i18n = false } = $derived(fieldConfig);
   const {
-    name: fieldName,
     label = '',
     comment = '',
     hint = '',
-    widget: widgetName = 'string',
-    i18n = false,
+    // @ts-ignore Some field types don’t have `pattern` property
     pattern = /** @type {string[]} */ ([]),
     readonly: readonlyOption = false,
-  } = $derived(fieldConfig);
+  } = $derived(/** @type {VisibleField} */ (fieldConfig));
   const required = $derived(isFieldRequired({ fieldConfig, locale }));
   const { hasSubFields } = $derived(
     widgetName === 'list'
       ? getListFieldInfo(/** @type {ListField} */ (fieldConfig))
       : { hasSubFields: false },
   );
-  const { multiple = false } = $derived(
-    /** @type {MultiValueField} */ (MULTI_VALUE_WIDGETS.includes(widgetName) ? fieldConfig : {}),
-  );
+  const multiple = $derived(isFieldMultiple(fieldConfig));
   const { min = 0, max = Infinity } = $derived(
     /** @type {MinMaxValueField} */ (MIN_MAX_VALUE_WIDGETS.includes(widgetName) ? fieldConfig : {}),
   );
@@ -156,15 +155,30 @@
   const canCopy = $derived(!inEditorComponent && canTranslate && otherLocales.length);
   const canRevert = $derived(!inEditorComponent && !(canDuplicate && locale !== defaultLocale));
   const keyPathRegex = $derived(new RegExp(`^${escapeRegExp(keyPath)}\\.\\d+$`));
-  // Multiple values are flattened in the value map object
-  const currentValue = $derived(
-    isList
-      ? Object.entries($state.snapshot($entryDraft?.[valueStoreKey][locale] ?? {}))
-          .filter(([_keyPath]) => keyPathRegex.test(_keyPath))
-          .map(([, val]) => val)
-          .filter((val) => val !== undefined)
-      : $state.snapshot($entryDraft?.[valueStoreKey][locale])?.[keyPath],
-  );
+  const currentValue = $derived.by(() => {
+    const valueMap = $state.snapshot($entryDraft?.[valueStoreKey][locale] ?? {});
+    const value = valueMap[keyPath];
+
+    if (!isList) {
+      return value;
+    }
+
+    // Multiple values are flattened in the value map object
+    const list = Object.entries(valueMap).filter(([_keyPath]) => keyPathRegex.test(_keyPath));
+
+    if (list.length) {
+      return list.map(([, val]) => val).filter((val) => val !== undefined);
+    }
+
+    // Convert invalid single value to list. This is in place to handle the case when a field is
+    // changed from single to multiple. (Continue to the `$effect` block below.)
+    // @todo Move this logic to entry normalization module
+    if (multiple && value !== undefined && typeof value !== 'object') {
+      return [value];
+    }
+
+    return [];
+  });
   const originalValue = $derived(
     isList
       ? Object.entries(originalValues?.[locale] ?? {})
@@ -182,6 +196,40 @@
       widgetName === 'uuid',
   );
   const invalid = $derived(validity?.valid === false);
+
+  $effect(() => {
+    // Convert invalid single value to list. This is in place to handle the case when a field is
+    // changed from single to multiple. (Continued from the `currentValue` store above.)
+    // @todo Move this logic to entry normalization module
+    if ($entryDraft && multiple && Array.isArray(currentValue)) {
+      const listItem = $entryDraft[valueStoreKey][locale]?.[`${keyPath}.0`];
+      const [value] = currentValue;
+
+      if (listItem === undefined && value !== undefined) {
+        $entryDraft[valueStoreKey][locale][`${keyPath}.0`] = value;
+        delete $entryDraft[valueStoreKey][locale][keyPath];
+      }
+    }
+  });
+
+  $effect(() => {
+    // Convert invalid list to single value. This is in place to handle the case when a field is
+    // changed from multiple to single.
+    // @todo Move this logic to entry normalization module
+    if ($entryDraft && !multiple && currentValue === undefined) {
+      const listItem = $entryDraft[valueStoreKey][locale]?.[`${keyPath}.0`];
+
+      if (listItem !== undefined) {
+        $entryDraft[valueStoreKey][locale][keyPath] = listItem;
+        // Remove all list items
+        Object.keys($entryDraft[valueStoreKey][locale]).forEach((key) => {
+          if (keyPathRegex.test(key)) {
+            delete $entryDraft[valueStoreKey][locale][key];
+          }
+        });
+      }
+    }
+  });
 </script>
 
 {#if $entryDraft && canEdit && widgetName !== 'hidden'}
@@ -189,6 +237,7 @@
     aria-label={$_('x_field', { values: { field: fieldLabel } })}
     data-widget={widgetName}
     data-key-path={keyPath}
+    data-typed-key-path={typedKeyPath}
     hidden={widgetName === 'compute'}
   >
     <header role="none">
@@ -230,7 +279,7 @@
       {/if}
     </header>
     {#if !readonly && comment}
-      <p class="comment">{@html sanitize(comment)}</p>
+      <p class="comment">{@html _sanitize(comment)}</p>
     {/if}
     {#if validity?.valid === false}
       <ValidationError id="{fieldId}-error">
@@ -285,6 +334,7 @@
         <Editor
           {locale}
           {keyPath}
+          {typedKeyPath}
           {fieldId}
           {fieldLabel}
           {fieldConfig}
@@ -295,7 +345,7 @@
         />
       {:else}
         {#if beforeInputLabel}
-          <div role="none" class="before-input">{@html sanitize(beforeInputLabel)}</div>
+          <div role="none" class="before-input">{@html _sanitize(beforeInputLabel)}</div>
         {/if}
         {#if prefix}
           <div role="none" class="prefix">{prefix}</div>
@@ -304,6 +354,7 @@
         <Editor
           {locale}
           {keyPath}
+          {typedKeyPath}
           {fieldId}
           {fieldLabel}
           {fieldConfig}
@@ -316,7 +367,7 @@
           <div role="none" class="suffix">{suffix}</div>
         {/if}
         {#if afterInputLabel}
-          <div role="none" class="after-input">{@html sanitize(afterInputLabel)}</div>
+          <div role="none" class="after-input">{@html _sanitize(afterInputLabel)}</div>
         {/if}
       {/if}
     </div>
@@ -324,7 +375,7 @@
       {@const ExtraHint = $extraHint}
       <div role="none" class="footer">
         {#if hint}
-          <p class="hint">{@html sanitize(hint)}</p>
+          <p class="hint">{@html _sanitize(hint)}</p>
         {/if}
         <ExtraHint {fieldConfig} {currentValue} />
       </div>

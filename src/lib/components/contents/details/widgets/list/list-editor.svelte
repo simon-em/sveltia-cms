@@ -1,7 +1,7 @@
 <!--
   @component
   Implement the editor for the List widget.
-  @see https://decapcms.org/docs/widgets/#list
+  @see https://decapcms.org/docs/widgets/#List
 -->
 <script>
   import { Group } from '@sveltia/ui';
@@ -12,7 +12,7 @@
 
   /**
    * @import { WidgetEditorProps } from '$lib/types/private';
-   * @import { ListField } from '$lib/types/public';
+   * @import { ComplexListField, SimpleListField, ListField } from '$lib/types/public';
    */
 
   /**
@@ -24,16 +24,18 @@
   /** @type {WidgetEditorProps & Props} */
   let {
     /* eslint-disable prefer-const */
-    ...allProps
+    fieldConfig: config,
+    ...rest
     /* eslint-enable prefer-const */
   } = $props();
 
   const widgetId = $props.id();
-
-  const { hasSubFields } = $derived(getListFieldInfo(allProps.fieldConfig));
-  const Component = $derived(hasSubFields ? ListEditorComplex : ListEditorSimple);
 </script>
 
 <Group aria-labelledby="list-{widgetId}-summary">
-  <Component {...allProps} />
+  {#if getListFieldInfo(config).hasSubFields}
+    <ListEditorComplex {...{ ...rest, fieldConfig: /** @type {ComplexListField} */ (config) }} />
+  {:else}
+    <ListEditorSimple {...{ ...rest, fieldConfig: /** @type {SimpleListField} */ (config) }} />
+  {/if}
 </Group>

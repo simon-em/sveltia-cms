@@ -1,6 +1,6 @@
 <script>
   import { Progressbar } from '@sveltia/ui';
-  import DOMPurify from 'isomorphic-dompurify';
+  import { sanitize } from 'isomorphic-dompurify';
   import { marked } from 'marked';
   import { _ } from 'svelte-i18n';
 
@@ -8,7 +8,7 @@
   import SignIn from '$lib/components/entrance/sign-in.svelte';
   import { announcedPageStatus } from '$lib/services/app/navigation';
   import { inAuthPopup } from '$lib/services/backends/git/shared/auth';
-  import { siteConfig, siteConfigError } from '$lib/services/config';
+  import { cmsConfig, cmsConfigErrors } from '$lib/services/config';
   import { dataLoaded, dataLoadedProgress } from '$lib/services/contents';
   import { user } from '$lib/services/user';
   import { signInError, unauthenticated } from '$lib/services/user/auth';
@@ -19,32 +19,44 @@
   });
 </script>
 
+{#snippet parseMarkdown(/** @type {string} */ str)}
+  {@html sanitize(/** @type {string} */ (marked.parseInline(str)), {
+    ALLOWED_TAGS: ['a', 'code'],
+    ALLOWED_ATTR: ['href'],
+  })}
+{/snippet}
+
 <div role="none" class="container" inert={$user && $dataLoaded}>
   <div role="none" class="inner">
-    {#if $siteConfig || $siteConfigError}
-      {@const logoURL = $siteConfig?.logo_url}
+    {#if $cmsConfig || $cmsConfigErrors.length}
+      {@const logoURL = $cmsConfig?.logo?.src ?? $cmsConfig?.logo_url}
       <img src={logoURL || `data:image/svg+xml;base64,${btoa(SveltiaLogo)}`} alt="" class="logo" />
     {/if}
     <h1>Sveltia CMS</h1>
-    {#if $siteConfigError}
+    {#if $cmsConfigErrors.length}
       <div role="alert" class="message">
-        {$siteConfigError.message}
-        {$_('config.error.try_again')}
+        <div role="none">
+          {$_($cmsConfigErrors.length === 1 ? 'config.one_error' : 'config.many_errors')}
+        </div>
+        <ul class="error">
+          {#each $cmsConfigErrors as error}
+            <li>
+              {@render parseMarkdown(error)}
+            </li>
+          {/each}
+        </ul>
       </div>
     {:else if $prefsError}
       <div role="alert" class="message">
         {$_(`prefs.error.${$prefsError.type}`)}
       </div>
-    {:else if !$siteConfig || !$prefs}
-      <div role="alert" class="message">{$_('loading_site_config')}</div>
+    {:else if !$cmsConfig || !$prefs}
+      <div role="alert" class="message">{$_('loading_cms_config')}</div>
     {:else if $signInError.message && $signInError.context === 'dataFetch'}
       <div role="alert">
         <div role="none" class="message">{$_('loading_site_data_error')}</div>
         <div role="none" class="error">
-          {@html DOMPurify.sanitize(
-            /** @type {string} */ (marked.parseInline($signInError.message)),
-            { ALLOWED_TAGS: ['a', 'code'], ALLOWED_ATTR: ['href'] },
-          )}
+          {@render parseMarkdown($signInError.message)}
         </div>
       </div>
     {:else if $inAuthPopup}
@@ -107,10 +119,12 @@
     .error {
       border-radius: var(--sui-control-medium-border-radius);
       padding: 12px;
-      background-color: var(--sui-secondary-background-color);
+      background-color: var(--sui-tertiary-background-color);
       font-size: var(--sui-font-size-default);
-      line-height: 1.5;
       text-align: center;
+      -webkit-user-select: text;
+      user-select: text;
+      cursor: text;
     }
 
     :global {
@@ -120,6 +134,19 @@
         font-size: var(--sui-font-size-large);
         font-weight: var(--sui-font-weight-normal);
         text-align: center;
+
+        ul {
+          margin: 12px 0 0;
+          padding: 0;
+          max-height: 160px;
+          overflow-y: auto;
+          list-style: none;
+        }
+
+        li {
+          margin: 12px;
+          padding: 0;
+        }
       }
     }
   }

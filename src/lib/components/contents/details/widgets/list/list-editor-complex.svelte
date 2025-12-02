@@ -1,19 +1,23 @@
 <!--
   @component
   Implement the editor for the List widget with subfield(s).
-  @see https://decapcms.org/docs/widgets/#list
+  @see https://decapcms.org/docs/widgets/#List
 -->
 <script>
   import { Button, Icon, Menu, MenuButton, MenuItem, Spacer, TruncatedText } from '@sveltia/ui';
+  import { isObject } from '@sveltia/utils/object';
   import { escapeRegExp } from '@sveltia/utils/string';
   import { unflatten } from 'flat';
-  import { getContext, onMount } from 'svelte';
+  import { getContext, onMount, untrack } from 'svelte';
   import { _ } from 'svelte-i18n';
 
+  import Image from '$lib/components/assets/shared/image.svelte';
+  import ExpandIcon from '$lib/components/common/expand-icon.svelte';
   import VisibilityObserver from '$lib/components/common/visibility-observer.svelte';
   import FieldEditor from '$lib/components/contents/details/editor/field-editor.svelte';
   import AddItemButton from '$lib/components/contents/details/widgets/object/add-item-button.svelte';
   import ObjectHeader from '$lib/components/contents/details/widgets/object/object-header.svelte';
+  import { getMediaFieldURL } from '$lib/services/assets/info';
   import { entryDraft } from '$lib/services/contents/draft';
   import { getDefaultValues } from '$lib/services/contents/draft/defaults';
   import { updateListField } from '$lib/services/contents/draft/update/list';
@@ -21,18 +25,24 @@
     getInitialExpanderState,
     syncExpanderStates,
   } from '$lib/services/contents/editor/expanders';
+  import { getField } from '$lib/services/contents/entry/fields';
   import { DEFAULT_I18N_CONFIG } from '$lib/services/contents/i18n/config';
   import { formatSummary, getListFieldInfo } from '$lib/services/contents/widgets/list/helper';
   import { isSmallScreen } from '$lib/services/user/env';
 
   /**
    * @import { FieldEditorContext, WidgetEditorProps } from '$lib/types/private';
-   * @import { ListField } from '$lib/types/public';
+   * @import {
+   * ComplexListField,
+   * ListFieldWithSubField,
+   * ListFieldWithSubFields,
+   * ListFieldWithTypes,
+   * } from '$lib/types/public';
    */
 
   /**
    * @typedef {object} Props
-   * @property {ListField} fieldConfig Field configuration.
+   * @property {ComplexListField} fieldConfig Field configuration.
    * @property {string[]} currentValue Field value.
    */
 
@@ -60,15 +70,15 @@
     allow_reorder: allowReorder = true,
     collapsed,
     summary,
+    thumbnail: thumbnailFieldName,
     minimize_collapsed: minimizeCollapsed = false,
     label_singular: labelSingular,
-    field,
-    fields,
     max = Infinity,
     add_to_top: addToTop = false,
-    types,
-    typeKey = 'type',
-  } = $derived(fieldConfig);
+  } = $derived(/** @type {ComplexListField} */ (fieldConfig));
+  const { field } = $derived(/** @type {ListFieldWithSubField} */ (fieldConfig));
+  const { fields } = $derived(/** @type {ListFieldWithSubFields} */ (fieldConfig));
+  const { types, typeKey = 'type' } = $derived(/** @type {ListFieldWithTypes} */ (fieldConfig));
   const { hasSingleSubField, hasVariableTypes } = $derived(getListFieldInfo(fieldConfig));
   const keyPathRegex = $derived(new RegExp(`^${escapeRegExp(keyPath)}\\.(\\d+)(.*)?`));
   const isIndexFile = $derived($entryDraft?.isIndexFile ?? false);
@@ -102,6 +112,12 @@
     }),
   );
   const hasMaxItems = $derived(items.length >= max);
+
+  /**
+   * List item thumbnails.
+   * @type {(string | undefined)[]}
+   */
+  const thumbnails = $state([]);
 
   /**
    * Initialize the expander state.
@@ -225,6 +241,70 @@
       isIndexFile,
     });
 
+  /**
+   * Get the thumbnail image URL for a list item.
+   * @param {number} index List index.
+   * @returns {Promise<string | undefined>} Thumbnail image URL.
+   */
+  const getThumbnail = async (index) => {
+    if (!thumbnailFieldName) {
+      return undefined;
+    }
+
+    const thumbnailKeyPath = `${keyPath}.${index}.${thumbnailFieldName.replace(/^fields\./, '')}`;
+    const thumbnailValue = valueMap[thumbnailKeyPath];
+
+    if (!thumbnailValue) {
+      return undefined;
+    }
+
+    const thumbnailFieldConfig = getField({
+      collectionName,
+      fileName,
+      valueMap,
+      keyPath: thumbnailKeyPath,
+      isIndexFile,
+    });
+
+    if (thumbnailFieldConfig?.widget !== 'image') {
+      return undefined;
+    }
+
+    return getMediaFieldURL({
+      value: thumbnailValue,
+      entry: $entryDraft?.originalEntry,
+      collectionName,
+      fileName,
+    });
+  };
+
+  /**
+   * Update thumbnails for all items.
+   */
+  const updateThumbnails = async () => {
+    if (!thumbnailFieldName) {
+      return;
+    }
+
+    thumbnails.length = items.length;
+
+    items.forEach(async (_item, index) => {
+      const itemThumbnail = await getThumbnail(index);
+
+      if (thumbnails[index] !== itemThumbnail) {
+        thumbnails[index] = itemThumbnail;
+      }
+    });
+  };
+
+  $effect(() => {
+    void [items];
+
+    untrack(() => {
+      updateThumbnails();
+    });
+  });
+
   onMount(() => {
     initializeExpanderState();
   });
@@ -242,7 +322,7 @@
     }}
   >
     {#snippet startIcon()}
-      <Icon name={parentExpanded ? 'expand_more' : 'chevron_right'} />
+      <ExpandIcon expanded={parentExpanded} />
     {/snippet}
   </Button>
   <div role="none" class="summary" id="object-{widgetId}-summary">
@@ -277,10 +357,10 @@
   </div>
 {/if}
 <div role="none" id="list-{widgetId}-item-list" class="item-list" class:collapsed={!parentExpanded}>
-  {#each items as item, index (item.__sc_item_id ?? index)}
+  {#each items as item, index (isObject(item) ? (item.__sc_item_id ?? index) : index)}
     <VisibilityObserver>
-      {@const expandedKeyPath = `${keyPath}.${index}`}
-      {@const expanded = $entryDraft?.expanderStates?._[expandedKeyPath] ?? true}
+      {@const itemKeyPath = `${keyPath}.${index}`}
+      {@const expanded = $entryDraft?.expanderStates?._[itemKeyPath] ?? true}
       {@const typeConfig = hasVariableTypes
         ? types?.find(({ name }) => name === item[typeKey])
         : undefined}
@@ -295,7 +375,7 @@
           controlId="list-{widgetId}-item-{index}-body"
           {expanded}
           toggleExpanded={subFields.length
-            ? () => syncExpanderStates({ [expandedKeyPath]: !expanded })
+            ? () => syncExpanderStates({ [itemKeyPath]: !expanded })
             : undefined}
         >
           {#snippet centerContent()}
@@ -401,17 +481,21 @@
             {#each subFields as subField (subField.name)}
               <VisibilityObserver>
                 <FieldEditor
-                  keyPath={hasSingleSubField
-                    ? `${keyPath}.${index}`
-                    : `${keyPath}.${index}.${subField.name}`}
+                  keyPath={hasSingleSubField ? itemKeyPath : `${itemKeyPath}.${subField.name}`}
+                  typedKeyPath={hasVariableTypes
+                    ? `${keyPath}.*<${item[typeKey]}>.${subField.name}`
+                    : `${keyPath}.*.${subField.name}`}
                   {locale}
                   fieldConfig={subField}
-                  context={hasSingleSubField ? 'single-field-list-widget' : undefined}
+                  context={hasSingleSubField ? 'single-subfield-list-widget' : undefined}
                 />
               </VisibilityObserver>
             {/each}
           {:else}
             <div role="none" class="summary">
+              {#if thumbnails[index]}
+                <Image src={thumbnails[index]} variant="icon" cover />
+              {/if}
               <TruncatedText lines={$isSmallScreen ? 2 : 1}>
                 {_formatSummary(index, summaryTemplate)}
               </TruncatedText>
@@ -456,6 +540,9 @@
     border-radius: var(--sui-control-medium-border-radius);
 
     .summary {
+      display: flex;
+      align-items: center;
+      gap: 8px;
       padding: 8px;
 
       &:empty {

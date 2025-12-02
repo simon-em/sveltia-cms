@@ -3,10 +3,10 @@ import { getIndexFile } from '$lib/services/contents/collection/index-file';
 
 /**
  * @import {
- * EntryCollection,
  * EntryDraft,
  * EntrySlugVariants,
  * FillTemplateOptions,
+ * InternalEntryCollection,
  * LocaleSlugMap,
  * } from '$lib/types/private';
  */
@@ -26,7 +26,7 @@ export const getFillSlugOptions = ({ draft }) => {
 
   return {
     // eslint-disable-next-line object-shorthand
-    collection: /** @type {EntryCollection} */ (collection),
+    collection: /** @type {InternalEntryCollection} */ (collection),
     content: {
       ...currentValues[defaultLocale],
       // Slug candidate for the default locale
@@ -38,19 +38,21 @@ export const getFillSlugOptions = ({ draft }) => {
 
 /**
  * Get the localized slug for the given locale.
+ * @internal
  * @param {object} args Arguments.
  * @param {EntryDraft} args.draft Entry draft.
  * @param {string} args.locale Locale.
  * @param {string[]} args.localizingKeyPaths List of key paths that the value will be localized.
  * @returns {string} Localized slug.
  */
-const getLocalizedSlug = ({ draft, locale, localizingKeyPaths }) => {
+export const getLocalizedSlug = ({ draft, locale, localizingKeyPaths }) => {
   const { isNew, collection, collectionFile, currentSlugs, currentValues, isIndexFile } = draft;
+  const { _type } = collection;
 
   const {
     identifier_field: identifierField = 'title',
     slug: slugTemplate = `{{${identifierField}}}`,
-  } = collection;
+  } = _type === 'entry' ? collection : {};
 
   const {
     _i18n: { defaultLocale },
@@ -81,18 +83,20 @@ const getLocalizedSlug = ({ draft, locale, localizingKeyPaths }) => {
 /**
  * Get the localized slug map. This only applies when the i18n structure is multiple files or
  * folders, and the slug template contains the `localize` flag, e.g. `{{title | localize}}`.
+ * @internal
  * @param {object} args Arguments.
  * @param {EntryDraft} args.draft Entry draft.
  * @param {string} args.defaultLocaleSlug Default locale’s entry slug.
  * @returns {LocaleSlugMap | undefined} Localized slug map.
  */
-const getLocalizedSlugs = ({ draft, defaultLocaleSlug }) => {
+export const getLocalizedSlugs = ({ draft, defaultLocaleSlug }) => {
   const { collection, collectionFile, currentLocales } = draft;
+  const { _type } = collection;
 
   const {
     identifier_field: identifierField = 'title',
     slug: slugTemplate = `{{${identifierField}}}`,
-  } = collection;
+  } = _type === 'entry' ? collection : {};
 
   const {
     _i18n: {
@@ -129,6 +133,7 @@ const getLocalizedSlugs = ({ draft, defaultLocaleSlug }) => {
  * helps Sveltia CMS and some frameworks to link localized files. The default property name is
  * `translationKey` used in Hugo’s multilingual support, and the default value is the default
  * locale’s slug.
+ * @internal
  * @param {object} args Arguments.
  * @param {EntryDraft} args.draft Entry draft.
  * @param {string} args.defaultLocaleSlug Default locale’s entry slug.
@@ -138,7 +143,7 @@ const getLocalizedSlugs = ({ draft, defaultLocaleSlug }) => {
  * @see https://github.com/sveltia/sveltia-cms#localizing-entry-slugs
  * @see https://gohugo.io/content-management/multilingual/#bypassing-default-linking
  */
-const getCanonicalSlug = ({ draft, defaultLocaleSlug, localizedSlugs, fillSlugOptions }) => {
+export const getCanonicalSlug = ({ draft, defaultLocaleSlug, localizedSlugs, fillSlugOptions }) => {
   if (!localizedSlugs) {
     return undefined;
   }
@@ -169,11 +174,12 @@ const getCanonicalSlug = ({ draft, defaultLocaleSlug, localizedSlugs, fillSlugOp
  */
 export const getSlugs = ({ draft }) => {
   const { isNew, collection, collectionFile, fileName, currentSlugs, isIndexFile } = draft;
+  const { _type } = collection;
 
   const {
     identifier_field: identifierField = 'title',
     slug: slugTemplate = `{{${identifierField}}}`,
-  } = collection;
+  } = _type === 'entry' ? collection : {};
 
   if (isIndexFile) {
     return {

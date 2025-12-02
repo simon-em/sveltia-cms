@@ -1,10 +1,11 @@
-import { marked } from 'marked';
+import { parse } from 'marked';
 import { get } from 'svelte/store';
 import TurndownService from 'turndown';
 
 import { entryDraft } from '$lib/services/contents/draft';
 import { copyFromLocaleToast, translatorApiKeyDialogState } from '$lib/services/contents/editor';
 import { getField } from '$lib/services/contents/entry/fields';
+import { getListFieldInfo } from '$lib/services/contents/widgets/list/helper';
 import { translator } from '$lib/services/integrations/translators';
 import { prefs } from '$lib/services/user/prefs';
 
@@ -16,8 +17,8 @@ import { prefs } from '$lib/services/user/prefs';
 
 /**
  * @typedef {object} CopyOptions
- * @property {InternalLocaleCode} sourceLocale Source locale, e.g. `en`.
- * @property {InternalLocaleCode} targetLocale Target locale, e.g. `ja`.
+ * @property {InternalLocaleCode} sourceLanguage Source locale, e.g. `en`.
+ * @property {InternalLocaleCode} targetLanguage Target locale, e.g. `ja`.
  * @property {FieldKeyPath} [keyPath] Flattened (dot-notated) object keys that will be used for
  * searching the source values. Omit this if copying all the fields. If the triggered widget is List
  * or Object, this will likely match multiple fields.
@@ -30,9 +31,10 @@ import { prefs } from '$lib/services/user/prefs';
 
 /**
  * Initialize a Turndown service instance for converting HTML to Markdown.
+ * @internal
  * @see https://github.com/mixmark-io/turndown
  */
-const turndownService = new TurndownService({
+export const turndownService = new TurndownService({
   headingStyle: 'atx',
   bulletListMarker: '-',
   codeBlockStyle: 'fenced',
@@ -43,21 +45,22 @@ turndownService.keep(['span', 'div']);
 
 /**
  * Get a list of fields to be copied or translated from the source locale to the target locale.
+ * @internal
  * @param {object} args Arguments.
  * @param {EntryDraft} args.draft Entry draft.
  * @param {CopyOptions} args.options Copy options.
  * @returns {CopyingFieldMap} Copied or translated field values.
  */
-const getCopyingFieldMap = ({ draft, options }) => {
+export const getCopyingFieldMap = ({ draft, options }) => {
   const { collectionName, fileName, currentValues, isIndexFile } = draft;
-  const { sourceLocale, targetLocale, keyPath = '', translate = false } = options;
-  const valueMap = currentValues[sourceLocale];
+  const { sourceLanguage, targetLanguage, keyPath = '', translate = false } = options;
+  const valueMap = currentValues[sourceLanguage];
   const getFieldArgs = { collectionName, fileName, valueMap, isIndexFile };
 
   return Object.fromEntries(
     Object.entries(valueMap)
       .map(([_keyPath, value]) => {
-        const targetLocaleValue = currentValues[targetLocale][_keyPath];
+        const targetLocaleValue = currentValues[targetLanguage][_keyPath];
         const field = getField({ ...getFieldArgs, keyPath: _keyPath });
         const widget = field?.widget ?? 'string';
 
@@ -68,7 +71,7 @@ const getCopyingFieldMap = ({ draft, options }) => {
           !['markdown', 'text', 'string', 'list'].includes(widget) ||
           // prettier-ignore
           (widget === 'list' &&
-          (/** @type {ListField} */ (field).field ?? /** @type {ListField} */ (field).fields)) ||
+          getListFieldInfo(/** @type {ListField} */ (field)).hasSubFields) ||
           (!translate && value === targetLocaleValue) ||
           // Skip populated fields when translating all the fields
           (!keyPath && translate && !!targetLocaleValue)
@@ -84,27 +87,29 @@ const getCopyingFieldMap = ({ draft, options }) => {
 
 /**
  * Update the toast notification.
+ * @internal
  * @param {'info' | 'success' | 'error'} status Status.
  * @param {string} message Message key.
  * @param {object} context Context.
  * @param {number} context.count Number of fields copied or translated.
- * @param {InternalLocaleCode} context.sourceLocale Source locale, e.g. `en`.
+ * @param {InternalLocaleCode} context.sourceLanguage Source locale, e.g. `en`.
  */
-const updateToast = (status, message, { count, sourceLocale }) => {
-  copyFromLocaleToast.set({ id: Date.now(), show: true, status, message, count, sourceLocale });
+export const updateToast = (status, message, { count, sourceLanguage }) => {
+  copyFromLocaleToast.set({ id: Date.now(), show: true, status, message, count, sourceLanguage });
 };
 
 /**
  * Translate the field value(s) from another locale.
+ * @internal
  * @param {object} args Arguments.
  * @param {LocaleContentMap} args.currentValues Current values for the entry draft. This will be
  * updated with the translated values.
  * @param {CopyOptions} args.options Copy options.
  * @param {CopyingFieldMap} args.copingFieldMap Copied or translated field values.
  */
-const translateFields = async ({ currentValues, options, copingFieldMap }) => {
+export const translateFields = async ({ currentValues, options, copingFieldMap }) => {
   const { serviceId, markdownSupported, translate } = get(translator);
-  const { sourceLocale, targetLocale } = options;
+  const { sourceLanguage, targetLanguage } = options;
   const count = Object.keys(copingFieldMap).length;
   const countType = count === 1 ? 'one' : 'many';
 
@@ -119,30 +124,30 @@ const translateFields = async ({ currentValues, options, copingFieldMap }) => {
     return;
   }
 
-  updateToast('info', 'translation.started', { count, sourceLocale });
+  updateToast('info', 'translation.started', { count, sourceLanguage });
 
   try {
     const translatedValues = await translate(
       Object.entries(copingFieldMap).map(([, { value, isMarkdown }]) =>
         // Convert the value from Markdown to HTML if needed
-        isMarkdown && !markdownSupported ? /** @type {string} */ (marked.parse(value)) : value,
+        isMarkdown && !markdownSupported ? /** @type {string} */ (parse(value)) : value,
       ),
-      { apiKey, sourceLocale, targetLocale },
+      { apiKey, sourceLanguage, targetLanguage },
     );
 
     Object.entries(copingFieldMap).forEach(([_keyPath, { isMarkdown }], index) => {
       const value = translatedValues[index];
 
       // Convert the value back to Markdown if needed
-      currentValues[targetLocale][_keyPath] =
+      currentValues[targetLanguage][_keyPath] =
         // @ts-ignore Silence a false type error
         isMarkdown && !markdownSupported ? turndownService.turndown(value) : value;
     });
 
-    updateToast('success', `translation.complete.${countType}`, { count, sourceLocale });
+    updateToast('success', `translation.complete.${countType}`, { count, sourceLanguage });
   } catch (ex) {
     // @todo Show a detailed error message.
-    updateToast('error', 'translation.error', { count, sourceLocale });
+    updateToast('error', 'translation.error', { count, sourceLanguage });
     // eslint-disable-next-line no-console
     console.error(ex);
   }
@@ -150,22 +155,23 @@ const translateFields = async ({ currentValues, options, copingFieldMap }) => {
 
 /**
  * Copy the field value(s) from another locale.
+ * @internal
  * @param {object} args Arguments.
  * @param {LocaleContentMap} args.currentValues Current values for the entry draft. This will be
  * updated with the copied values.
  * @param {CopyOptions} args.options Copy options.
  * @param {CopyingFieldMap} args.copingFieldMap Copied or translated field values.
  */
-const copyFields = ({ currentValues, options, copingFieldMap }) => {
-  const { sourceLocale, targetLocale } = options;
+export const copyFields = ({ currentValues, options, copingFieldMap }) => {
+  const { sourceLanguage, targetLanguage } = options;
   const count = Object.keys(copingFieldMap).length;
   const countType = count === 1 ? 'one' : 'many';
 
   Object.entries(copingFieldMap).forEach(([_keyPath, { value }]) => {
-    currentValues[targetLocale][_keyPath] = value;
+    currentValues[targetLanguage][_keyPath] = value;
   });
 
-  updateToast('success', `copy.complete.${countType}`, { count, sourceLocale });
+  updateToast('success', `copy.complete.${countType}`, { count, sourceLanguage });
 };
 
 /**
@@ -173,14 +179,14 @@ const copyFields = ({ currentValues, options, copingFieldMap }) => {
  * @param {CopyOptions} options Copy options.
  */
 export const copyFromLocale = async (options) => {
-  const { sourceLocale, translate = false } = options;
+  const { sourceLanguage, translate = false } = options;
   const draft = /** @type {EntryDraft} */ (get(entryDraft));
   const { currentValues } = draft;
   const copingFieldMap = getCopyingFieldMap({ draft, options });
   const count = Object.keys(copingFieldMap).length;
 
   if (!count) {
-    updateToast('info', `${translate ? 'translation' : 'copy'}.none`, { count, sourceLocale });
+    updateToast('info', `${translate ? 'translation' : 'copy'}.none`, { count, sourceLanguage });
 
     return;
   }

@@ -1,6 +1,8 @@
 <script>
-  import { Button, Icon } from '@sveltia/ui';
+  import { Button } from '@sveltia/ui';
   import { _ } from 'svelte-i18n';
+
+  import ExpandIcon from '$lib/components/common/expand-icon.svelte';
 
   /**
    * @import { Snippet } from 'svelte';
@@ -21,7 +23,7 @@
     /* eslint-disable prefer-const */
     label = '',
     controlId,
-    expanded,
+    expanded = $bindable(),
     toggleExpanded,
     centerContent = undefined,
     endContent = undefined,
@@ -33,16 +35,16 @@
   <div role="none">
     <Button
       size="small"
-      disabled={!toggleExpanded}
       aria-label={expanded ? $_('collapse') : $_('expand')}
       aria-expanded={expanded}
       aria-controls={controlId}
       onclick={() => {
+        expanded = !expanded;
         toggleExpanded?.();
       }}
     >
       {#snippet startIcon()}
-        <Icon name={expanded ? 'expand_more' : 'chevron_right'} />
+        <ExpandIcon {expanded} />
       {/snippet}
       {#if label}
         <span role="none" class="type">
@@ -64,6 +66,7 @@
     display: flex;
     align-items: center;
     gap: 8px;
+    height: 24px;
     background-color: var(--sui-secondary-border-color);
 
     & > div {

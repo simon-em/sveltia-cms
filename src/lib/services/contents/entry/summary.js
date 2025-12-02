@@ -16,7 +16,6 @@ import { getField, getFieldDisplayValue } from '$lib/services/contents/entry/fie
  * @import {
  * CommitAuthor,
  * Entry,
- * EntryCollection,
  * FlattenedEntryContent,
  * InternalCollection,
  * InternalLocaleCode,
@@ -103,7 +102,20 @@ export const replaceSub = (tag, context) => {
   }
 
   if (tag === 'dirname') {
-    return stripSlashes(entryPath.replace(/[^/]+$/, '').replace(basePath ?? '', ''));
+    let dirPath = entryPath.replace(/[^/]+$/, '');
+
+    if (basePath) {
+      // Remove basePath prefix with boundary awareness
+      const prefix = basePath.endsWith('/') ? basePath : `${basePath}/`;
+
+      if (dirPath.startsWith(prefix)) {
+        dirPath = dirPath.slice(prefix.length);
+      } else if (dirPath.startsWith(basePath)) {
+        dirPath = dirPath.slice(basePath.length);
+      }
+    }
+
+    return stripSlashes(dirPath);
   }
 
   if (tag === 'filename') {
@@ -195,16 +207,16 @@ export const getEntrySummary = (
   }
 
   const {
+    _type,
     name: collectionName,
-    identifier_field: identifierField = 'title',
-    summary: summaryTemplate,
     _i18n: { defaultLocale },
   } = collection;
 
-  const basePath =
-    collection._type === 'entry'
-      ? /** @type {EntryCollection} */ (collection)._file.basePath
-      : undefined;
+  const {
+    _file: { basePath } = {},
+    identifier_field: identifierField = 'title',
+    summary: summaryTemplate,
+  } = _type === 'entry' ? collection : {};
 
   const { locales, slug, commitDate, commitAuthor } = entry;
 

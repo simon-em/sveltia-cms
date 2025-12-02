@@ -5,7 +5,7 @@ import { getIndexFile } from '$lib/services/contents/collection/index-file';
 import { getLocalePath } from '$lib/services/contents/i18n';
 
 /**
- * @import { EntryCollection, EntryDraft, InternalLocaleCode } from '$lib/types/private';
+ * @import { EntryDraft, InternalEntryCollection, InternalLocaleCode } from '$lib/types/private';
  */
 
 /**
@@ -35,7 +35,7 @@ export const createEntryPath = ({ draft, locale, slug }) => {
     return originalEntry.locales[locale].path;
   }
 
-  const entryCollection = /** @type {EntryCollection} */ (collection);
+  const entryCollection = /** @type {InternalEntryCollection} */ (collection);
 
   const {
     _file: { basePath, subPath, extension },
@@ -45,7 +45,7 @@ export const createEntryPath = ({ draft, locale, slug }) => {
    * Support folder collections path.
    * @see https://decapcms.org/docs/collection-folder/#folder-collections-path
    */
-  const path = isIndexFile
+  let path = isIndexFile
     ? /** @type {string} */ (getIndexFile(entryCollection)?.name)
     : subPath
       ? fillTemplate(subPath, {
@@ -55,6 +55,11 @@ export const createEntryPath = ({ draft, locale, slug }) => {
           currentSlug: slug,
         })
       : slug;
+
+  // Remove extension from index file name if it already has one
+  if (isIndexFile && path?.endsWith(`.${extension}`)) {
+    path = path.slice(0, -extension.length - 1);
+  }
 
   const pathOptions = {
     multiple_folders: `${basePath}/${locale}/${path}.${extension}`,

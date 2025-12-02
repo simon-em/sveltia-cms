@@ -1,6 +1,6 @@
 import { get } from 'svelte/store';
 
-import { siteConfig } from '$lib/services/config';
+import { cmsConfig } from '$lib/services/config';
 import { getIndexFile, isCollectionIndexFile } from '$lib/services/contents/collection/index-file';
 import { entryDraft } from '$lib/services/contents/draft';
 import { restoreBackupIfNeeded } from '$lib/services/contents/draft/backup';
@@ -11,16 +11,27 @@ import { getDefaultValues } from '$lib/services/contents/draft/defaults';
  * @import {
  * InternalCollection,
  * InternalCollectionFile,
+ * InternalEntryCollection,
  * LocaleContentMap,
  * LocaleExpanderMap,
  * } from '$lib/types/private';
  */
 
-const SLUG_EDITOR_TAG = '{{fields._slug}}';
-const LOCALIZED_SLUG_EDITOR_TAG = '{{fields._slug | localize}}';
+/**
+ * Tag to enable the slug editor for the default locale.
+ * @internal
+ */
+export const SLUG_EDITOR_TAG = '{{fields._slug}}';
+
+/**
+ * Tag to enable the slug editor for all locales.
+ * @internal
+ */
+export const LOCALIZED_SLUG_EDITOR_TAG = '{{fields._slug | localize}}';
 
 /**
  * Get the `slugEditor` property for an entry draft.
+ * @internal
  * @param {object} args Arguments.
  * @param {InternalCollection} args.collection Collection that the entry belongs to.
  * @param {InternalCollectionFile} [args.collectionFile] Collection file. File/singleton collection
@@ -34,12 +45,13 @@ const LOCALIZED_SLUG_EDITOR_TAG = '{{fields._slug | localize}}';
  * be shown for new entries in entry collections.
  * @see https://github.com/sveltia/sveltia-cms/issues/499
  */
-const getSlugEditorProp = ({ collection, collectionFile, originalEntry }) => {
+export const getSlugEditorProp = ({ collection, collectionFile, originalEntry }) => {
+  const { _type } = collection;
+
   const {
-    _type,
     identifier_field: identifierField = 'title',
     slug: slugTemplate = `{{${identifierField}}}`,
-  } = collection;
+  } = _type === 'entry' ? collection : {};
 
   const { id } = originalEntry;
   const isNew = id === undefined;
@@ -90,7 +102,10 @@ export const createDraft = ({
   const fileName = collectionFile?.name;
   const { id, slug, locales } = originalEntry;
   const isNew = id === undefined;
-  const { fields: regularFields = [], _i18n } = collectionFile ?? collection;
+
+  const { fields: regularFields = [], _i18n } =
+    collectionFile ?? /** @type {InternalEntryCollection} */ (collection);
+
   const indexFile = isIndexFile ? getIndexFile(collection) : undefined;
   const fields = indexFile?.fields ?? regularFields;
 
@@ -98,7 +113,7 @@ export const createDraft = ({
     indexFile?.editor?.preview ??
     collectionFile?.editor?.preview ??
     collection.editor?.preview ??
-    get(siteConfig)?.editor?.preview ??
+    get(cmsConfig)?.editor?.preview ??
     true;
 
   const {
@@ -132,6 +147,7 @@ export const createDraft = ({
   );
 
   entryDraft.set({
+    id: isNew ? crypto.randomUUID() : id,
     createdAt: Date.now(),
     isNew,
     isIndexFile,

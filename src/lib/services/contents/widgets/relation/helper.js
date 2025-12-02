@@ -60,10 +60,11 @@ export const optionCacheMap = new Map();
 
 /**
  * Enclose the given field name in brackets if it doesn’t contain any brackets.
+ * @internal
  * @param {string} fieldName Field name e.g. `{{name.first}}` or `name.first`.
  * @returns {string} Bracketed field name, e.g. `{{name.first}}`.
  */
-const normalizeFieldName = (fieldName) => {
+export const normalizeFieldName = (fieldName) => {
   if (/{{.+?}}/.test(fieldName)) {
     return fieldName;
   }
@@ -78,11 +79,12 @@ const normalizeFieldName = (fieldName) => {
 
 /**
  * Determine the type of list field based on the field configuration.
+ * @internal
  * @param {Field | undefined} fieldConfig Field configuration object.
  * @returns {{ isSimpleListField: boolean, isSingleSubfieldListField: boolean }} Object with boolean
  * flags for different list field types.
  */
-const getListFieldTypes = (fieldConfig) => {
+export const getListFieldTypes = (fieldConfig) => {
   if (!fieldConfig) {
     return {
       isSimpleListField: false,
@@ -91,9 +93,9 @@ const getListFieldTypes = (fieldConfig) => {
   }
 
   const isListWidget = fieldConfig.widget === 'list';
-  const hasField = isListWidget ? !!(/** @type {ListField} */ (fieldConfig).field) : false;
-  const hasFields = isListWidget ? !!(/** @type {ListField} */ (fieldConfig).fields) : false;
-  const hasTypes = isListWidget ? !!(/** @type {ListField} */ (fieldConfig).types) : false;
+  const hasField = isListWidget ? 'field' in /** @type {ListField} */ (fieldConfig) : false;
+  const hasFields = isListWidget ? 'fields' in /** @type {ListField} */ (fieldConfig) : false;
+  const hasTypes = isListWidget ? 'types' in /** @type {ListField} */ (fieldConfig) : false;
 
   return {
     isSimpleListField: isListWidget && !hasField && !hasFields && !hasTypes,
@@ -103,13 +105,14 @@ const getListFieldTypes = (fieldConfig) => {
 
 /**
  * Get the replacement value for a field name based on standard field types.
+ * @internal
  * @param {string} fieldName The field name to get replacement for.
  * @param {ReplacementContext} context Context object containing `slug`, `locale`, and
  * `getDisplayValue` function.
  * @param {FallbackContext} fallbackContext Fallback context for additional content.
  * @returns {string} The replacement value.
  */
-const getFieldReplacement = (fieldName, context, fallbackContext) => {
+export const getFieldReplacement = (fieldName, context, fallbackContext) => {
   const { slug, locale, getDisplayValue } = context;
   const { content, locales, defaultLocale, identifierField } = fallbackContext;
 
@@ -136,6 +139,7 @@ const getFieldReplacement = (fieldName, context, fallbackContext) => {
 
 /**
  * Replace all template tags in the given strings with actual values.
+ * @internal
  * @param {RelationOption} templates Object containing `label`, `value`, and `searchValue`
  * templates.
  * @param {string[]} fieldNames Array of field names to replace.
@@ -143,7 +147,7 @@ const getFieldReplacement = (fieldName, context, fallbackContext) => {
  * @param {FallbackContext} fallbackContext Fallback context for additional content.
  * @returns {RelationOption} Object with replaced `label`, `value`, and `searchValue`.
  */
-const replaceTemplateFields = (templates, fieldNames, context, fallbackContext) => {
+export const replaceTemplateFields = (templates, fieldNames, context, fallbackContext) => {
   let { label, value, searchValue } = templates;
 
   fieldNames.forEach((fieldName) => {
@@ -159,18 +163,21 @@ const replaceTemplateFields = (templates, fieldNames, context, fallbackContext) 
 
 /**
  * Extract field names from template strings.
+ * @internal
  * @param {string} template Template string with field names in {{}} brackets.
  * @returns {string[]} Array of field names.
  */
-const extractFieldNames = (template) => [...template.matchAll(/{{(.+?)}}/g)].map((m) => m[1]);
+export const extractFieldNames = (template) =>
+  [...template.matchAll(/{{(.+?)}}/g)].map((m) => m[1]);
 
 /**
  * Normalize and prepare field templates for processing.
+ * @internal
  * @param {RelationField} fieldConfig Field configuration.
  * @param {string} identifierField Default identifier field.
  * @returns {TemplateStrings} Normalized field templates.
  */
-const prepareFieldTemplates = (fieldConfig, identifierField) => {
+export const prepareFieldTemplates = (fieldConfig, identifierField) => {
   /**
    * @example 'userId'
    * @example 'name.first'
@@ -229,13 +236,19 @@ const prepareFieldTemplates = (fieldConfig, identifierField) => {
 
 /**
  * Filter entries based on file name and entry filters.
+ * @internal
  * @param {Entry[]} refEntries Reference entries.
  * @param {InternalLocaleCode} locale Current locale.
  * @param {string} [fileName] File name to filter by.
  * @param {RelationFieldFilterOptions[]} [entryFilters] Entry filters to apply.
  * @returns {{ refEntry: Entry, content: FlattenedEntryContent }[]} Filtered entries with content.
  */
-const filterAndPrepareEntries = (refEntries, locale, fileName = undefined, entryFilters = []) =>
+export const filterAndPrepareEntries = (
+  refEntries,
+  locale,
+  fileName = undefined,
+  entryFilters = [],
+) =>
   refEntries
     .filter((refEntry) => !fileName || fileName === refEntry.slug)
     .map((refEntry) => {
@@ -255,6 +268,7 @@ const filterAndPrepareEntries = (refEntries, locale, fileName = undefined, entry
 
 /**
  * Create a single relation option for non-list fields.
+ * @internal
  * @param {object} params Parameters.
  * @param {TemplateStrings} params.templates Template strings.
  * @param {string[]} params.allFieldNames All field names to replace.
@@ -262,7 +276,7 @@ const filterAndPrepareEntries = (refEntries, locale, fileName = undefined, entry
  * @param {FallbackContext} params.fallbackContext Fallback context.
  * @returns {RelationOption} Single relation option.
  */
-const createSimpleOption = ({ templates, allFieldNames, context, fallbackContext }) => {
+export const createSimpleOption = ({ templates, allFieldNames, context, fallbackContext }) => {
   const { slug } = context;
   const { _displayField, _valueField, _searchField } = templates;
   const { content, locales, defaultLocale, identifierField } = fallbackContext;
@@ -301,11 +315,12 @@ const createSimpleOption = ({ templates, allFieldNames, context, fallbackContext
 
 /**
  * Analyze list field configurations and group them by base field name.
+ * @internal
  * @param {string[]} allFieldNames All field names.
  * @param {GetFieldArgs} getFieldArgs Arguments for getField function.
  * @returns {Map<string, [string, any][]>} Grouped list field configurations.
  */
-const analyzeListFields = (allFieldNames, getFieldArgs) => {
+export const analyzeListFields = (allFieldNames, getFieldArgs) => {
   const listFieldConfigs = new Map();
   const baseFieldGroups = new Map();
 
@@ -339,6 +354,7 @@ const analyzeListFields = (allFieldNames, getFieldArgs) => {
 
 /**
  * Process single subfield list fields (e.g., `skills.*`).
+ * @internal
  * @param {object} params Parameters.
  * @param {string} params.baseFieldName Base field name.
  * @param {[string, any][]} params.groupEntries Group entries.
@@ -349,7 +365,7 @@ const analyzeListFields = (allFieldNames, getFieldArgs) => {
  * @param {FallbackContext} params.fallbackContext Fallback context.
  * @returns {RelationOption} Single option with joined values.
  */
-const processSingleSubfieldList = ({
+export const processSingleSubfieldList = ({
   baseFieldName,
   groupEntries,
   content,
@@ -398,7 +414,33 @@ const processSingleSubfieldList = ({
 };
 
 /**
+ * Regex to match complex list fields with subfields (e.g., `cities.*.name`).
+ * @type {RegExp}
+ */
+const COMPLEX_LIST_FIELD_REGEX = /^([^.]+)\.\*\.([^.]+)$/;
+
+/**
+ * Get the subfield match from group entries.
+ * @internal
+ * @param {[string, any][]} groupEntries Group entries.
+ * @returns {RegExpMatchArray | null} Subfield match.
+ */
+export const getSubFieldMatch = (groupEntries) => {
+  /** @type {RegExpMatchArray | null} */
+  let subFieldMatch = null;
+
+  groupEntries.some(([fieldName]) => {
+    subFieldMatch = fieldName.match(COMPLEX_LIST_FIELD_REGEX);
+
+    return !!subFieldMatch;
+  });
+
+  return subFieldMatch;
+};
+
+/**
  * Process complex list fields (e.g., `cities.*.name`).
+ * @internal
  * @param {object} params Parameters.
  * @param {[string, any][]} params.groupEntries Group entries.
  * @param {FlattenedEntryContent} params.content Entry content.
@@ -408,7 +450,7 @@ const processSingleSubfieldList = ({
  * @param {FallbackContext} params.fallbackContext Fallback context.
  * @returns {RelationOption[]} Array of options, one for each list item.
  */
-const processComplexListField = ({
+export const processComplexListField = ({
   groupEntries,
   content,
   templates,
@@ -416,27 +458,11 @@ const processComplexListField = ({
   context,
   fallbackContext,
 }) => {
-  const { _displayField, _valueField, _searchField } = templates;
-  /** @type {RelationOption[]} */
-  const results = [];
+  const [, baseFieldNameForList, subKey] = getSubFieldMatch(groupEntries) ?? [];
 
-  // Find a field that has the pattern we can use to extract the list
-  const complexField = groupEntries.find(([fieldName]) =>
-    fieldName.match(/^([^.]+)\.\*\.([^.]+)$/),
-  );
-
-  if (!complexField) {
+  if (!baseFieldNameForList) {
     return [];
   }
-
-  const [fieldName] = complexField;
-  const subFieldMatch = fieldName.match(/^([^.]+)\.\*\.([^.]+)$/);
-
-  if (!subFieldMatch) {
-    return [];
-  }
-
-  const [, baseFieldNameForList, subKey] = subFieldMatch;
 
   const regex = new RegExp(
     `^${escapeRegExp(baseFieldNameForList)}\\.\\d+\\.${escapeRegExp(subKey)}$`,
@@ -455,7 +481,9 @@ const processComplexListField = ({
     })
     .sort((a, b) => a.index - b.index);
 
-  listValues.forEach(({ index }) => {
+  const { _displayField, _valueField, _searchField } = templates;
+
+  return listValues.map(({ index }) => {
     // Replace all wildcards for this base field with the current list item
     const processedTemplates = {
       label: _displayField,
@@ -492,18 +520,17 @@ const processComplexListField = ({
       fallbackContext,
     );
 
-    results.push({
+    return {
       label: label || '',
       value: value || context.slug,
       searchValue: searchValue || label || '',
-    });
+    };
   });
-
-  return results;
 };
 
 /**
  * Process all list fields for an entry.
+ * @internal
  * @param {object} params Parameters.
  * @param {Map<string, [string, any][]>} params.baseFieldGroups Grouped configs.
  * @param {FlattenedEntryContent} params.content Entry content.
@@ -513,7 +540,7 @@ const processComplexListField = ({
  * @param {FallbackContext} params.fallbackContext Fallback context.
  * @returns {{ results: RelationOption[], hasProcessedListFields: boolean }} Results.
  */
-const processListFields = ({
+export const processListFields = ({
   baseFieldGroups,
   content,
   templates,
@@ -565,6 +592,7 @@ const processListFields = ({
 
 /**
  * Process a single entry to generate relation options.
+ * @internal
  * @param {object} params Parameters.
  * @param {Entry} params.refEntry Reference entry.
  * @param {FlattenedEntryContent} params.content Entry content.
@@ -579,7 +607,7 @@ const processListFields = ({
  * @param {InternalLocaleCode} params.defaultLocale Default locale.
  * @returns {RelationOption[]} Array of relation options.
  */
-const processEntry = ({
+export const processEntry = ({
   refEntry,
   content,
   collection,
@@ -645,7 +673,7 @@ const processEntry = ({
 
   const { label, value, searchValue } = replaceTemplateFields(
     processedTemplates,
-    allFieldNames,
+    allFieldNames.filter((name) => !name.includes('*')),
     context,
     fallbackContext,
   );
@@ -683,10 +711,11 @@ export const getOptions = (locale, fieldConfig, refEntries) => {
   }
 
   const {
-    identifier_field: identifierField = 'title',
+    _type,
     _i18n: { defaultLocale },
   } = collection;
 
+  const { identifier_field: identifierField = 'title' } = _type === 'entry' ? collection : {};
   const entryFilters = filters ?? [];
   const templates = prepareFieldTemplates(fieldConfig, identifierField);
   const { allFieldNames, hasListFields } = templates;

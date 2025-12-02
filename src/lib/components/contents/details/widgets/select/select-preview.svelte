@@ -1,22 +1,22 @@
 <!--
   @component
   Implement the preview for the Select widget.
-  @see https://decapcms.org/docs/widgets/#select
+  @see https://decapcms.org/docs/widgets/#Select
 -->
 <script>
   import { isObjectArray } from '@sveltia/utils/array';
 
-  import { getListFormatter } from '$lib/services/contents/i18n';
+  import { getCanonicalLocale, getListFormatter } from '$lib/services/contents/i18n';
 
   /**
    * @import { WidgetPreviewProps } from '$lib/types/private';
-   * @import { SelectField } from '$lib/types/public';
+   * @import { SelectField, SelectFieldValue } from '$lib/types/public';
    */
 
   /**
    * @typedef {object} Props
    * @property {SelectField} fieldConfig Field configuration.
-   * @property {string | string[] | undefined} currentValue Field value.
+   * @property {SelectFieldValue | SelectFieldValue[] | undefined} currentValue Field value.
    */
 
   /** @type {WidgetPreviewProps & Props} */
@@ -34,7 +34,7 @@
 
   /**
    * Get the display label by value.
-   * @param {string | string[]} value Value.
+   * @param {SelectFieldValue | SelectFieldValue[]} value Value.
    * @returns {string} Label.
    */
   const getLabel = (value) =>
@@ -45,7 +45,9 @@
 </script>
 
 {#if multiple && Array.isArray(currentValue) && currentValue.length}
-  <p lang={locale} dir="auto">{listFormatter.format(currentValue.map(getLabel).sort())}</p>
+  <p lang={getCanonicalLocale(locale)} dir="auto">
+    {listFormatter.format(currentValue.map(getLabel).sort())}
+  </p>
 {:else if currentValue !== undefined}
-  <p lang={locale} dir="auto">{getLabel(currentValue)}</p>
+  <p lang={getCanonicalLocale(locale)} dir="auto">{getLabel(currentValue)}</p>
 {/if}

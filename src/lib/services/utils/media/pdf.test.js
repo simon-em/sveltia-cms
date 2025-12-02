@@ -1,8 +1,8 @@
+/* eslint-disable max-classes-per-file */
+
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
-import { renderPDF } from './pdf';
-
-// Mock dependencies
+// Mock dependencies before importing the module
 vi.mock('$lib/services/app/dependencies', () => ({
   getUnpkgURL: vi.fn((pkg) => `https://unpkg.com/${pkg}`),
 }));
@@ -18,17 +18,41 @@ vi.mock('$lib/services/utils/media/image/resize', () => ({
 describe('renderPDF', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    // Mock URL methods
-    global.URL = /** @type {any} */ ({
-      createObjectURL: vi.fn(() => 'blob:mock-url'),
-      revokeObjectURL: vi.fn(),
-    });
-    // Mock OffscreenCanvas
-    global.OffscreenCanvas = /** @type {any} */ (
-      vi.fn(() => ({
-        getContext: vi.fn(() => ({})),
-      }))
-    );
+
+    /**
+     * Mock URL class with static methods.
+     */
+    class MockURL {
+      /**
+       * Constructor for MockURL.
+       * @param {string} url URL string.
+       */
+      constructor(url) {
+        this.href = url;
+      }
+    }
+
+    MockURL.createObjectURL = vi.fn(() => 'blob:mock-url');
+    MockURL.revokeObjectURL = vi.fn();
+
+    global.URL = /** @type {any} */ (MockURL);
+
+    /**
+     * Mock OffscreenCanvas class.
+     */
+    class MockOffscreenCanvas {
+      /**
+       * Get the rendering context.
+       * @param {string} _contextType Context type.
+       * @returns {object} Rendering context.
+       */
+      // eslint-disable-next-line no-unused-vars
+      getContext(_contextType) {
+        return {};
+      }
+    }
+
+    global.OffscreenCanvas = /** @type {any} */ (MockOffscreenCanvas);
   });
 
   afterEach(() => {
@@ -36,6 +60,7 @@ describe('renderPDF', () => {
   });
 
   test('should render PDF successfully with default options', async () => {
+    const { renderPDF } = await import('./pdf');
     const mockBlob = new Blob(['test pdf content'], { type: 'application/pdf' });
     const mockResultBlob = new Blob(['rendered image'], { type: 'image/png' });
 
@@ -77,6 +102,7 @@ describe('renderPDF', () => {
   });
 
   test('should handle custom options', async () => {
+    const { renderPDF } = await import('./pdf');
     const mockBlob = new Blob(['test pdf content'], { type: 'application/pdf' });
     const mockResultBlob = new Blob(['rendered image'], { type: 'image/jpeg' });
 
@@ -124,19 +150,121 @@ describe('renderPDF', () => {
   });
 
   test('should handle library loading failure', async () => {
+    // Reset modules to get a fresh instance without cached pdfjs
+    vi.resetModules();
+
+    // Re-mock dependencies after reset
+    vi.doMock('$lib/services/app/dependencies', () => ({
+      getUnpkgURL: vi.fn((pkg) => `https://unpkg.com/${pkg}-fail`),
+    }));
+
+    vi.doMock('$lib/services/utils/media/image/encode', () => ({
+      exportCanvasAsBlob: vi.fn(),
+    }));
+
+    vi.doMock('$lib/services/utils/media/image/resize', () => ({
+      resizeCanvas: vi.fn(),
+    }));
+
+    // Import a fresh instance of renderPDF
+    const { renderPDF } = await import('./pdf');
     const mockBlob = new Blob(['test pdf content'], { type: 'application/pdf' });
 
-    // The actual function catches import errors and throws "Failed to load PDF.js library"
-    // But due to the way it's implemented, it might also throw "Failed to render PDF"
-    // Let's just check that it throws some error for invalid scenarios
-
-    await expect(renderPDF(mockBlob)).rejects.toThrow();
+    // Test that it throws the correct error when PDF.js fails to load
+    await expect(renderPDF(mockBlob)).rejects.toThrow('Failed to load PDF.js library');
   });
 
   test('should handle PDF rendering failure', async () => {
-    const mockBlob = new Blob(['invalid pdf content'], { type: 'application/pdf' });
+    // Reset modules completely to get a fresh pdf.js import
+    vi.resetModules();
 
-    // For invalid PDF content, the function should throw "Failed to render PDF"
+    // Re-establish all mocks
+    vi.doMock('$lib/services/app/dependencies', () => ({
+      getUnpkgURL: vi.fn((pkg) => `https://unpkg.com/${pkg}`),
+    }));
+
+    vi.doMock('$lib/services/utils/media/image/encode', () => ({
+      exportCanvasAsBlob: vi.fn(),
+    }));
+
+    vi.doMock('$lib/services/utils/media/image/resize', () => ({
+      resizeCanvas: vi.fn(() => ({ scale: 1, width: 800, height: 600 })),
+    }));
+
+    // Mock PDF.js to throw an error during document loading
+    vi.doMock('https://unpkg.com/pdfjs-dist/build/pdf.min.mjs', () => ({
+      default: {
+        GlobalWorkerOptions: { workerSrc: '' },
+        getDocument: vi.fn(() => ({
+          promise: Promise.reject(new Error('Invalid PDF document')),
+        })),
+      },
+      GlobalWorkerOptions: { workerSrc: '' },
+      getDocument: vi.fn(() => ({
+        promise: Promise.reject(new Error('Invalid PDF document')),
+      })),
+    }));
+
+    const { renderPDF } = await import('./pdf');
+    const mockBlob = new Blob(['test pdf content'], { type: 'application/pdf' });
+
+    // Should throw "Failed to render PDF" when PDF processing fails
+    await expect(renderPDF(mockBlob)).rejects.toThrow('Failed to render PDF');
+  });
+
+  test('should handle PDF page rendering failure', async () => {
+    // Reset modules completely to get a fresh pdf.js import
+    vi.resetModules();
+
+    // Re-establish all mocks
+    vi.doMock('$lib/services/app/dependencies', () => ({
+      getUnpkgURL: vi.fn((pkg) => `https://unpkg.com/${pkg}`),
+    }));
+
+    vi.doMock('$lib/services/utils/media/image/encode', () => ({
+      exportCanvasAsBlob: vi.fn(),
+    }));
+
+    vi.doMock('$lib/services/utils/media/image/resize', () => ({
+      resizeCanvas: vi.fn(() => ({ scale: 1, width: 800, height: 600 })),
+    }));
+
+    // Mock PDF.js with render failure
+    vi.doMock('https://unpkg.com/pdfjs-dist/build/pdf.min.mjs', () => ({
+      default: {
+        GlobalWorkerOptions: { workerSrc: '' },
+        getDocument: vi.fn(() => ({
+          promise: Promise.resolve({
+            getPage: vi.fn(() =>
+              Promise.resolve({
+                getViewport: vi.fn(() => ({ width: 800, height: 600 })),
+                render: vi.fn(() => ({
+                  promise: Promise.reject(new Error('Render failed')),
+                })),
+              }),
+            ),
+          }),
+        })),
+      },
+      GlobalWorkerOptions: { workerSrc: '' },
+      getDocument: vi.fn(() => ({
+        promise: Promise.resolve({
+          getPage: vi.fn(() =>
+            Promise.resolve({
+              getViewport: vi.fn(() => ({ width: 800, height: 600 })),
+              render: vi.fn(() => ({
+                promise: Promise.reject(new Error('Render failed')),
+              })),
+            }),
+          ),
+        }),
+      })),
+    }));
+
+    const { renderPDF } = await import('./pdf');
+    const mockBlob = new Blob(['test pdf content'], { type: 'application/pdf' });
+
+    // Should throw "Failed to render PDF" when rendering fails
     await expect(renderPDF(mockBlob)).rejects.toThrow('Failed to render PDF');
   });
 });

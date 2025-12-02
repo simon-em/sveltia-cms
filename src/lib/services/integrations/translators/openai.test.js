@@ -1,21 +1,48 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import openaiTranslator, { normalizeLanguage } from './openai.js';
+import openaiTranslator, { availability } from './openai.js';
 
-// Mock the getLocaleLabel function
+// Mock the i18n functions
 vi.mock('$lib/services/contents/i18n', () => ({
-  getLocaleLabel: vi.fn((locale) => {
+  getLocaleLabel: vi.fn((locale, options) => {
+    // Normalize locale code (handle both - and _ separators, case variations)
+    const normalizedLocale = String(locale || '')
+      .toLowerCase()
+      .replace(/_/g, '-');
+
     /** @type {Record<string, string>} */
     const labels = {
+      // Base languages
       en: 'English',
       fr: 'French',
       de: 'German',
       es: 'Spanish',
       zh: 'Chinese',
       ja: 'Japanese',
+      pt: 'Portuguese',
+      // Regional variants
+      'en-ca': 'Canadian English',
+      'en-us': 'American English',
+      'en-gb': 'British English',
+      'fr-ca': 'Canadian French',
+      'fr-fr': 'French (France)',
+      'zh-cn': 'Chinese (China)',
+      'zh-tw': 'Chinese (Taiwan)',
+      'pt-br': 'Brazilian Portuguese',
+      'pt-pt': 'European Portuguese',
+      'es-mx': 'Mexican Spanish',
+      'es-es': 'Spanish (Spain)',
+      'de-de': 'German (Germany)',
+      'de-at': 'Austrian German',
     };
 
-    return labels[locale] || locale;
+    // When displayLocale is 'en', undefined, or not provided, return the English name
+    if (!options || !options.displayLocale || options.displayLocale === 'en') {
+      return labels[normalizedLocale] || undefined;
+    }
+
+    // Otherwise return the label or the locale itself (for other display locales)
+    return labels[normalizedLocale] || locale;
   }),
 }));
 
@@ -54,60 +81,41 @@ describe('OpenAI Translator Service', () => {
         expect(openaiTranslator.apiKeyPattern.test(key)).toBe(false);
       });
     });
+
+    it('should support markdown', () => {
+      expect(openaiTranslator.markdownSupported).toBe(true);
+    });
   });
 
-  describe('Language Normalization', () => {
-    describe('normalizeLanguage', () => {
-      it('should normalize basic language codes', () => {
-        expect(normalizeLanguage('en')).toBe('en');
-        expect(normalizeLanguage('fr')).toBe('fr');
-        expect(normalizeLanguage('de')).toBe('de');
-        expect(normalizeLanguage('ja')).toBe('ja');
-        expect(normalizeLanguage('zh')).toBe('zh');
-      });
-
-      it('should handle locale codes with regions', () => {
-        expect(normalizeLanguage('en-US')).toBe('en');
-        expect(normalizeLanguage('fr-FR')).toBe('fr');
-        expect(normalizeLanguage('zh-CN')).toBe('zh');
-        expect(normalizeLanguage('pt-BR')).toBe('pt');
-      });
-
-      it('should handle case variations', () => {
-        expect(normalizeLanguage('EN')).toBe('en');
-        expect(normalizeLanguage('Fr')).toBe('fr');
-        expect(normalizeLanguage('ZH-CN')).toBe('zh');
-      });
-
-      it('should return undefined for unsupported languages', () => {
-        expect(normalizeLanguage('unsupported')).toBeUndefined();
-        expect(normalizeLanguage('xyz')).toBeUndefined();
-        expect(normalizeLanguage('')).toBeUndefined();
-      });
+  describe('Availability', () => {
+    it('should return true for supported language pairs', async () => {
+      await expect(availability({ sourceLanguage: 'en', targetLanguage: 'fr' })).resolves.toBe(
+        true,
+      );
+      await expect(
+        availability({ sourceLanguage: 'fr-FR', targetLanguage: 'zh-CN' }),
+      ).resolves.toBe(true);
+      await expect(availability({ sourceLanguage: 'es', targetLanguage: 'ja' })).resolves.toBe(
+        true,
+      );
     });
 
-    describe('getSourceLanguage', () => {
-      it('should return normalized language codes', () => {
-        expect(openaiTranslator.getSourceLanguage('en')).toBe('en');
-        expect(openaiTranslator.getSourceLanguage('fr-FR')).toBe('fr');
-        expect(openaiTranslator.getSourceLanguage('zh-CN')).toBe('zh');
-      });
-
-      it('should return undefined for unsupported languages', () => {
-        expect(openaiTranslator.getSourceLanguage('unsupported')).toBeUndefined();
-      });
+    it('should return false for unsupported source languages', async () => {
+      await expect(
+        availability({ sourceLanguage: 'unsupported', targetLanguage: 'fr' }),
+      ).resolves.toBe(false);
     });
 
-    describe('getTargetLanguage', () => {
-      it('should return normalized language codes', () => {
-        expect(openaiTranslator.getTargetLanguage('en')).toBe('en');
-        expect(openaiTranslator.getTargetLanguage('fr-FR')).toBe('fr');
-        expect(openaiTranslator.getTargetLanguage('zh-CN')).toBe('zh');
-      });
+    it('should return false for unsupported target languages', async () => {
+      await expect(
+        availability({ sourceLanguage: 'en', targetLanguage: 'unsupported' }),
+      ).resolves.toBe(false);
+    });
 
-      it('should return undefined for unsupported languages', () => {
-        expect(openaiTranslator.getTargetLanguage('unsupported')).toBeUndefined();
-      });
+    it('should return false when both languages are unsupported', async () => {
+      await expect(
+        availability({ sourceLanguage: 'unsupported1', targetLanguage: 'unsupported2' }),
+      ).resolves.toBe(false);
     });
   });
 
@@ -115,8 +123,8 @@ describe('OpenAI Translator Service', () => {
     const mockApiKey = 'sk-proj-1234567890abcdefghijklmnopqrstuvwxyzABCDEF';
 
     const mockOptions = {
-      sourceLocale: 'en',
-      targetLocale: 'fr',
+      sourceLanguage: 'en',
+      targetLanguage: 'fr',
       apiKey: mockApiKey,
     };
 
@@ -125,9 +133,7 @@ describe('OpenAI Translator Service', () => {
         choices: [
           {
             message: {
-              content: JSON.stringify({
-                translations: ['Bonjour le monde', 'Comment allez-vous ?'],
-              }),
+              content: JSON.stringify(['Bonjour le monde', 'Comment allez-vous ?']),
             },
           },
         ],
@@ -155,7 +161,6 @@ describe('OpenAI Translator Service', () => {
             'Content-Type': 'application/json',
             Authorization: `Bearer ${mockApiKey}`,
           },
-          body: expect.stringContaining('"response_format":{"type":"json_object"}'),
         }),
       );
     });
@@ -165,9 +170,10 @@ describe('OpenAI Translator Service', () => {
         choices: [
           {
             message: {
-              content: JSON.stringify({
-                translations: ['# Bonjour **monde**', 'Voici une [lien](https://example.com)'],
-              }),
+              content: JSON.stringify([
+                '# Bonjour **monde**',
+                'Voici une [lien](https://example.com)',
+              ]),
             },
           },
         ],
@@ -191,7 +197,7 @@ describe('OpenAI Translator Service', () => {
     it('should throw error for unsupported source locale', async () => {
       const invalidOptions = {
         ...mockOptions,
-        sourceLocale: 'unsupported',
+        sourceLanguage: 'unsupported',
       };
 
       await expect(openaiTranslator.translate(['Hello'], invalidOptions)).rejects.toThrow(
@@ -202,7 +208,7 @@ describe('OpenAI Translator Service', () => {
     it('should throw error for unsupported target locale', async () => {
       const invalidOptions = {
         ...mockOptions,
-        targetLocale: 'unsupported',
+        targetLanguage: 'unsupported',
       };
 
       await expect(openaiTranslator.translate(['Hello'], invalidOptions)).rejects.toThrow(
@@ -243,6 +249,22 @@ describe('OpenAI Translator Service', () => {
 
       await expect(openaiTranslator.translate(['Hello'], mockOptions)).rejects.toThrow(
         'OpenAI API error: 429 Too Many Requests',
+      );
+    });
+
+    it('should handle API errors when error JSON parsing fails', async () => {
+      const mockFetch = vi.mocked(fetch);
+
+      // Create a Response that fails to parse as JSON
+      const mockResponse = new Response('Invalid JSON', {
+        status: 500,
+        statusText: 'Internal Server Error',
+      });
+
+      mockFetch.mockResolvedValueOnce(mockResponse);
+
+      await expect(openaiTranslator.translate(['Hello'], mockOptions)).rejects.toThrow(
+        'OpenAI API error: 500 Internal Server Error',
       );
     });
 
@@ -290,9 +312,7 @@ describe('OpenAI Translator Service', () => {
         choices: [
           {
             message: {
-              content: JSON.stringify({
-                translations: [],
-              }),
+              content: JSON.stringify([]),
             },
           },
         ],
@@ -317,9 +337,7 @@ describe('OpenAI Translator Service', () => {
         choices: [
           {
             message: {
-              content: JSON.stringify({
-                translations: ['Bonjour'],
-              }),
+              content: JSON.stringify(['Bonjour']),
             },
           },
         ],
@@ -344,9 +362,7 @@ describe('OpenAI Translator Service', () => {
         choices: [
           {
             message: {
-              content: JSON.stringify({
-                translations: ['Bonjour\nComment allez-vous ?\nBonne journée !'],
-              }),
+              content: JSON.stringify(['Bonjour\nComment allez-vous ?\nBonne journée !']),
             },
           },
         ],
@@ -372,9 +388,7 @@ describe('OpenAI Translator Service', () => {
         choices: [
           {
             message: {
-              content: JSON.stringify({
-                translations: ['Bonjour'], // Only one translation for two inputs
-              }),
+              content: JSON.stringify(['Bonjour']), // Only one translation for two inputs
             },
           },
         ],
@@ -456,8 +470,7 @@ describe('OpenAI Translator Service', () => {
       expect(openaiTranslator).toHaveProperty('apiKeyURL');
       expect(openaiTranslator).toHaveProperty('apiKeyPattern');
       expect(openaiTranslator).toHaveProperty('markdownSupported');
-      expect(openaiTranslator).toHaveProperty('getSourceLanguage');
-      expect(openaiTranslator).toHaveProperty('getTargetLanguage');
+      expect(openaiTranslator).toHaveProperty('availability');
       expect(openaiTranslator).toHaveProperty('translate');
     });
 
@@ -466,8 +479,7 @@ describe('OpenAI Translator Service', () => {
     });
 
     it('should have function properties that are callable', () => {
-      expect(typeof openaiTranslator.getSourceLanguage).toBe('function');
-      expect(typeof openaiTranslator.getTargetLanguage).toBe('function');
+      expect(typeof availability).toBe('function');
       expect(typeof openaiTranslator.translate).toBe('function');
     });
   });
@@ -476,8 +488,8 @@ describe('OpenAI Translator Service', () => {
     const mockApiKey = 'sk-proj-1234567890abcdefghijklmnopqrstuvwxyzABCDEF';
 
     const mockOptions = {
-      sourceLocale: 'en',
-      targetLocale: 'fr',
+      sourceLanguage: 'en',
+      targetLanguage: 'fr',
       apiKey: mockApiKey,
     };
 
@@ -486,9 +498,7 @@ describe('OpenAI Translator Service', () => {
         choices: [
           {
             message: {
-              content: JSON.stringify({
-                translations: ['Test'],
-              }),
+              content: JSON.stringify(['Test']),
             },
           },
         ],
@@ -511,10 +521,9 @@ describe('OpenAI Translator Service', () => {
 
       expect(requestBody.messages[0].content).toContain('markdown formatting');
       expect(requestBody.messages[0].content).toContain('HTML tags');
-      expect(requestBody.messages[0].content).toContain('JSON object');
+      expect(requestBody.messages[0].content).toContain('JSON array');
       expect(requestBody.model).toBe('gpt-4o-mini');
       expect(requestBody.temperature).toBe(0.3);
-      expect(requestBody.response_format).toEqual({ type: 'json_object' });
     });
 
     it('should use proper authentication header', async () => {
@@ -522,9 +531,7 @@ describe('OpenAI Translator Service', () => {
         choices: [
           {
             message: {
-              content: JSON.stringify({
-                translations: ['Test'],
-              }),
+              content: JSON.stringify(['Test']),
             },
           },
         ],
@@ -546,28 +553,6 @@ describe('OpenAI Translator Service', () => {
       expect(headers).toMatchObject({
         'Content-Type': 'application/json',
         Authorization: `Bearer ${mockApiKey}`,
-      });
-    });
-  });
-
-  describe('Exported Helper Functions', () => {
-    describe('normalizeLanguage edge cases', () => {
-      it('should handle various separators', () => {
-        expect(normalizeLanguage('zh-CN')).toBe('zh');
-        expect(normalizeLanguage('zh_CN')).toBe('zh');
-        expect(normalizeLanguage('pt-BR')).toBe('pt');
-      });
-
-      it('should be case insensitive', () => {
-        expect(normalizeLanguage('EN')).toBe('en');
-        expect(normalizeLanguage('Fr')).toBe('fr');
-        expect(normalizeLanguage('DE')).toBe('de');
-      });
-
-      it('should handle edge cases', () => {
-        expect(normalizeLanguage('a')).toBeUndefined();
-        expect(normalizeLanguage('123')).toBeUndefined();
-        expect(normalizeLanguage('en-US-x-custom')).toBe('en');
       });
     });
   });

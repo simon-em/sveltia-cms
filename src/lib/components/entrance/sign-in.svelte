@@ -1,11 +1,11 @@
 <script>
   import { Button, Icon, PromptDialog, Spacer } from '@sveltia/ui';
-  import DOMPurify from 'isomorphic-dompurify';
+  import { sanitize } from 'isomorphic-dompurify';
   import { onMount } from 'svelte';
   import { _ } from 'svelte-i18n';
 
   import { allBackendServices } from '$lib/services/backends';
-  import { siteConfig } from '$lib/services/config';
+  import { cmsConfig } from '$lib/services/config';
   import {
     signInAutomatically,
     signInError,
@@ -13,18 +13,26 @@
     signInManually,
   } from '$lib/services/user/auth';
 
+  /**
+   * @import { GitBackend } from '$lib/types/public';
+   */
+
   let isLocalHost = $state(false);
   let isLocalBackendSupported = $state(false);
   let isBrave = $state(false);
   let showTokenDialog = $state(false);
   let token = $state('');
 
-  const configuredBackendName = $derived(/** @type {string} */ ($siteConfig?.backend?.name));
+  const configuredBackendName = $derived(/** @type {string} */ ($cmsConfig?.backend?.name));
   const configuredBackend = $derived(
     configuredBackendName ? allBackendServices[configuredBackendName] : null,
   );
-  const repositoryName = $derived($siteConfig?.backend?.repo?.split('/')?.[1]);
   const isTestRepo = $derived(configuredBackendName === 'test-repo');
+  const repositoryName = $derived(
+    isTestRepo
+      ? undefined
+      : /** @type {GitBackend} */ ($cmsConfig?.backend)?.repo?.split('/').pop(),
+  );
   const showLocalBackendOption = $derived(isLocalHost && !isTestRepo);
 
   /**
@@ -36,7 +44,7 @@
    * @returns {string} Linked and sanitized HTML string.
    */
   const getLinkedString = ({ key, values, link }) =>
-    DOMPurify.sanitize($_(key, { values }).replace('<a>', `<a href="${link}" target="_blank">`), {
+    sanitize($_(key, { values }).replace('<a>', `<a href="${link}" target="_blank">`), {
       ALLOWED_TAGS: ['a'],
       ALLOWED_ATTR: ['href', 'target'],
     });

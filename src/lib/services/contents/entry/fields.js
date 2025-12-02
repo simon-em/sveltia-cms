@@ -8,26 +8,34 @@ import { getCollection } from '$lib/services/contents/collection';
 import { getCollectionFile } from '$lib/services/contents/collection/files';
 import { getIndexFile, isCollectionIndexFile } from '$lib/services/contents/collection/index-file';
 import { getCanonicalLocale, getListFormatter } from '$lib/services/contents/i18n';
-import { MULTI_VALUE_WIDGETS } from '$lib/services/contents/widgets';
+import { MEDIA_WIDGETS, MULTI_VALUE_WIDGETS } from '$lib/services/contents/widgets';
 import { getDateTimeFieldDisplayValue } from '$lib/services/contents/widgets/date-time/helper';
 import { getComponentDef } from '$lib/services/contents/widgets/markdown/components/definitions';
 import { getReferencedOptionLabel } from '$lib/services/contents/widgets/relation/helper';
 import { getOptionLabel } from '$lib/services/contents/widgets/select/helper';
+import { isMultiple } from '$lib/services/integrations/media-libraries/shared';
 
 /**
  * @import {
  * Entry,
  * FlattenedEntryContent,
  * GetFieldArgs,
+ * InternalEntryCollection,
  * InternalLocaleCode,
  * } from '$lib/types/private';
  * @import {
  * DateTimeField,
  * Field,
  * FieldKeyPath,
- * ListField,
+ * FieldWithSubFields,
+ * FieldWithTypes,
+ * ListFieldWithSubField,
+ * ListFieldWithSubFields,
+ * ListFieldWithTypes,
+ * MediaField,
  * MultiValueField,
  * NumberField,
+ * ObjectFieldWithSubFields,
  * RelationField,
  * SelectField,
  * } from '$lib/types/public';
@@ -37,6 +45,49 @@ import { getOptionLabel } from '$lib/services/contents/widgets/select/helper';
  * @type {Map<string, Field | undefined>}
  */
 export const fieldConfigCacheMap = new Map();
+
+/**
+ * Check if multi selection is enabled for the given field configuration.
+ * @param {Field} fieldConfig Field configuration.
+ * @returns {boolean} Result.
+ */
+export const isFieldMultiple = (fieldConfig) => {
+  const widgetName = fieldConfig.widget ?? 'string';
+
+  if (MEDIA_WIDGETS.includes(widgetName)) {
+    return isMultiple(/** @type {MediaField} */ (fieldConfig));
+  }
+
+  if (MULTI_VALUE_WIDGETS.includes(widgetName)) {
+    return !!(/** @type {MultiValueField} */ (fieldConfig).multiple);
+  }
+
+  return false;
+};
+
+/**
+ * Extract explicit type from a key segment with syntax like `<typeName>` or `*<typeName>`.
+ * @param {string} key The key segment to parse.
+ * @returns {{ cleanKey: string; typeName?: string }} Object with cleaned key and optional type.
+ */
+const parseExplicitType = (key) => {
+  // Match patterns like "*<type>", "<type>", or "0<type>" or "fieldName<type>"
+  const match = key.match(/^(.*?)<([^>]+)>(.*)$/);
+
+  if (!match) {
+    return { cleanKey: key };
+  }
+
+  const [, prefix, typeName, suffix] = match;
+
+  // If there’s content after the closing bracket, it’s malformed
+  if (suffix) {
+    return { cleanKey: key };
+  }
+
+  // Return the prefix (which might be *, a number, or field name) and the type
+  return { cleanKey: prefix || '', typeName };
+};
 
 /**
  * Get a field’s config object that matches the given field name (key path).
@@ -72,7 +123,9 @@ export const getField = (args) => {
     return undefined;
   }
 
-  const { fields: regularFields = [] } = collectionFile ?? collection;
+  const { fields: regularFields = [] } =
+    collectionFile ?? /** @type {InternalEntryCollection} */ (collection);
+
   const indexFile = isIndexFile ? getIndexFile(collection) : undefined;
 
   const fields = componentName
@@ -82,61 +135,105 @@ export const getField = (args) => {
   const keyPathArray = keyPath.split('.');
   /** @type {Field | undefined} */
   let field;
+  /** @type {string | undefined} - Track explicit type for current nesting level */
+  let currentExplicitType;
 
   keyPathArray.forEach((key, index) => {
     if (index === 0) {
-      field = fields.find(({ name }) => name === key);
+      // First, try to parse explicit type from the field name itself (for object fields like
+      // "widget<button>")
+      const { cleanKey, typeName } = parseExplicitType(key);
+
+      field = fields.find(({ name }) => name === cleanKey);
 
       // If using index file and field not found, try regular fields as fallback
       if (!field && indexFile?.fields) {
-        field = regularFields.find(({ name }) => name === key);
+        field = regularFields.find(({ name }) => name === cleanKey);
+      }
+
+      // Store explicit type for later use
+      if (typeName) {
+        currentExplicitType = typeName;
       }
     } else if (field) {
-      const isNumericKey = /^\d+$/.test(key);
-      const keyPathArraySub = keyPathArray.slice(0, index);
+      const { cleanKey, typeName } = parseExplicitType(key);
       const { widget = 'text' } = field;
 
+      // Update explicit type if provided in this segment
+      if (typeName) {
+        currentExplicitType = typeName;
+      }
+
+      const isNumericKey = /^\d+$/.test(cleanKey);
+      const isWildcardKey = cleanKey === '*';
+
       // Handle multi-value widgets with numeric keys, e.g. `authors.0`
-      if (isNumericKey && MULTI_VALUE_WIDGETS.includes(widget)) {
+      if ((isNumericKey || isWildcardKey) && MULTI_VALUE_WIDGETS.includes(widget)) {
         // For single value field, numeric access is not allowed
-        if (!(/** @type {MultiValueField} */ (field).multiple)) {
+        if (!isFieldMultiple(field)) {
           field = undefined;
         }
 
         return;
       }
 
-      // Handle all other widgets (List, Object, etc.)
-      const {
-        field: subField,
-        fields: subFields,
-        types,
-        typeKey = 'type',
-      } = /** @type {ListField} */ (field);
+      const { field: subField } = /** @type {ListFieldWithSubField} */ (field);
+      const { fields: subFields } = /** @type {FieldWithSubFields} */ (field);
+      const { types, typeKey = 'type' } = /** @type {FieldWithTypes} */ (field);
 
+      // Handle all other widgets (List, Object, etc.)
       if (subField) {
-        const subFieldName = isNumericKey ? keyPathArray[index + 1] : undefined;
+        const subFieldName = isNumericKey || isWildcardKey ? keyPathArray[index + 1] : undefined;
 
         // It’s possible to get a single-subfield List field with or without a subfield name (e.g.
-        // `image.0` or `image.0.src`), but when a subfield name is specified, check if it’s valid
-        field = !subFieldName || subField.name === subFieldName ? subField : undefined;
-      } else if (subFields && isNumericKey) {
+        // `image.0` or `image.0.src`), but when a subfield name is specified, check if it’s valid.
+        // The field could be nested (object inside object), so check recursively.
+        if (
+          !subFieldName ||
+          subField.name === subFieldName ||
+          (subField.widget === 'object' &&
+            'fields' in subField &&
+            /** @type {ObjectFieldWithSubFields} */ (subField).fields?.some(
+              (f) => f.name === subFieldName,
+            ))
+        ) {
+          field = subField;
+        } else {
+          field = undefined;
+        }
+      } else if (subFields && (isNumericKey || isWildcardKey)) {
         // For list widgets with multiple fields, numeric keys (like "0") should be skipped
         // Keep the current field (the list widget) and continue to the next part of the path field
         // remains unchanged
-      } else if (subFields && !isNumericKey) {
-        field = subFields.find(({ name }) => name === key);
-      } else if (types && isNumericKey) {
-        // List widget variable types
+      } else if (subFields && !isNumericKey && cleanKey !== '') {
+        field = subFields.find(({ name }) => name === cleanKey);
+      } else if (types && (isNumericKey || isWildcardKey)) {
+        // List widget variable types - check for explicit type first, then fall back to valueMap
+        const resolvedType =
+          currentExplicitType ??
+          valueMap[[keyPathArray.slice(0, index).join('.'), cleanKey, typeKey].join('.')];
+
         // @ts-ignore
-        field = types.find(
-          ({ name }) => name === valueMap[[...keyPathArraySub, key, typeKey].join('.')],
-        );
-      } else if (types && key !== typeKey) {
-        // Object widget variable types
+        field = types.find(({ name }) => name === resolvedType);
+
+        // Clear explicit type after using it
+        if (isWildcardKey) {
+          currentExplicitType = undefined;
+        }
+      } else if (types && key !== typeKey && cleanKey !== typeKey && cleanKey !== '') {
+        // Object widget variable types - check for explicit type first, then fall back to valueMap
+        const resolvedType =
+          currentExplicitType ??
+          valueMap[[keyPathArray.slice(0, index).join('.'), typeKey].join('.')];
+
         field = types
-          .find(({ name }) => name === valueMap[[...keyPathArraySub, typeKey].join('.')])
-          ?.fields?.find(({ name }) => name === key);
+          .find(({ name }) => name === resolvedType)
+          ?.fields?.find(({ name }) => name === cleanKey);
+
+        // Clear explicit type after using it
+        if (currentExplicitType) {
+          currentExplicitType = undefined;
+        }
       } else {
         // If we reach here, the list field is malformed (no `field`, `fields`, or `types`) and
         // we’re trying to access a nested path, so return undefined
@@ -144,6 +241,15 @@ export const getField = (args) => {
       }
     }
   });
+
+  // If we have an explicit type but haven’t applied it yet (e.g., for "widget<button>" with no
+  // further navigation), apply it now
+  if (currentExplicitType && field && 'types' in field) {
+    const { types } = /** @type {FieldWithTypes} */ (field);
+
+    // @ts-ignore
+    field = types.find(({ name }) => name === currentExplicitType);
+  }
 
   fieldConfigCacheMap.set(cacheKey, field);
 
@@ -158,6 +264,7 @@ export const getField = (args) => {
  * @param {InternalLocaleCode} args.locale Current pane’s locale.
  * @returns {boolean} Result.
  */
+// @ts-ignore Hidden field doesn’t have `required` property
 export const isFieldRequired = ({ fieldConfig: { required = true }, locale }) =>
   Array.isArray(required) ? required.includes(locale) : !!required;
 
@@ -224,7 +331,8 @@ export const getFieldDisplayValue = ({
   }
 
   if (fieldConfig?.widget === 'list') {
-    const { fields, types } = /** @type {ListField} */ (fieldConfig);
+    const { fields } = /** @type {ListFieldWithSubFields} */ (fieldConfig);
+    const { types } = /** @type {ListFieldWithTypes} */ (fieldConfig);
 
     if (fields || types) {
       // Ignore

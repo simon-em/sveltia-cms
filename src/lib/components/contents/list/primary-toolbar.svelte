@@ -7,7 +7,7 @@
     Toolbar,
     TruncatedText,
   } from '@sveltia/ui';
-  import DOMPurify from 'isomorphic-dompurify';
+  import { sanitize } from 'isomorphic-dompurify';
   import { marked } from 'marked';
   import { _, locale as appLocale } from 'svelte-i18n';
 
@@ -27,23 +27,39 @@
    * @param {string} str Original string.
    * @returns {string} Sanitized string.
    */
-  const sanitize = (str) =>
-    DOMPurify.sanitize(/** @type {string} */ (marked.parseInline(str)), {
+  const _sanitize = (str) =>
+    sanitize(/** @type {string} */ (marked.parseInline(str)), {
       ALLOWED_TAGS: ['strong', 'em', 'del', 'code', 'a'],
       ALLOWED_ATTR: ['href'],
     });
 
   const name = $derived($selectedCollection?.name ?? '');
   const description = $derived($selectedCollection?.description);
-  const isEntryCollection = $derived($selectedCollection?._type === 'entry');
-  const canCreate = $derived($selectedCollection?.create ?? false);
-  const canDelete = $derived($selectedCollection?.delete ?? true);
-  const limit = $derived($selectedCollection?.limit ?? Infinity);
   const createDisabled = $derived(!canCreateEntry($selectedCollection));
   const collectionLabel = $derived(
     // `$appLocale` is a key, because `getCollectionLabel` can return a localized label
     $appLocale && $selectedCollection ? getCollectionLabel($selectedCollection) : name,
   );
+
+  const { isEntryCollection, canCreate, canDelete, limit } = $derived.by(() => {
+    const collection = $selectedCollection;
+
+    if (collection?._type === 'entry') {
+      return {
+        isEntryCollection: true,
+        canCreate: collection.create ?? false,
+        canDelete: collection.delete ?? true,
+        limit: collection.limit ?? Infinity,
+      };
+    }
+
+    return {
+      isEntryCollection: false,
+      canCreate: false,
+      canDelete: false,
+      limit: Infinity,
+    };
+  });
 </script>
 
 {#if $selectedCollection}
@@ -62,7 +78,7 @@
     {:else}
       <div role="none" class="description">
         <TruncatedText>
-          {@html sanitize(description || '')}
+          {@html _sanitize(description || '')}
         </TruncatedText>
       </div>
     {/if}

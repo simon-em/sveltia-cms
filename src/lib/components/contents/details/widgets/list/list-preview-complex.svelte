@@ -1,9 +1,10 @@
 <!--
   @component
   Implement the preview for the List widget with subfield(s).
-  @see https://decapcms.org/docs/widgets/#list
+  @see https://decapcms.org/docs/widgets/#List
 -->
 <script>
+  import { isObject } from '@sveltia/utils/object';
   import { escapeRegExp } from '@sveltia/utils/string';
   import { unflatten } from 'flat';
 
@@ -11,15 +12,21 @@
   import FieldPreview from '$lib/components/contents/details/preview/field-preview.svelte';
   import Subsection from '$lib/components/contents/details/widgets/object/subsection.svelte';
   import { entryDraft } from '$lib/services/contents/draft';
+  import { getListFieldInfo } from '$lib/services/contents/widgets/list/helper';
 
   /**
    * @import { WidgetPreviewProps } from '$lib/types/private';
-   * @import { ListField } from '$lib/types/public';
+   * @import {
+   * ComplexListField,
+   * ListFieldWithSubField,
+   * ListFieldWithSubFields,
+   * ListFieldWithTypes,
+   * } from '$lib/types/public';
    */
 
   /**
    * @typedef {object} Props
-   * @property {ListField} fieldConfig Field configuration.
+   * @property {ComplexListField} fieldConfig Field configuration.
    * @property {string[] | undefined} currentValue Field value.
    */
 
@@ -32,14 +39,11 @@
     /* eslint-enable prefer-const */
   } = $props();
 
-  const {
-    name: fieldName,
-    // Widget-specific options
-    field,
-    fields,
-    types,
-    typeKey = 'type',
-  } = $derived(fieldConfig);
+  const { name: fieldName } = $derived(fieldConfig);
+  const { field } = $derived(/** @type {ListFieldWithSubField} */ (fieldConfig));
+  const { fields } = $derived(/** @type {ListFieldWithSubFields} */ (fieldConfig));
+  const { types, typeKey = 'type' } = $derived(/** @type {ListFieldWithTypes} */ (fieldConfig));
+  const { hasSingleSubField, hasVariableTypes } = $derived(getListFieldInfo(fieldConfig));
   const keyPathRegex = $derived(new RegExp(`^${escapeRegExp(keyPath)}\\.\\d+`));
   const items = $derived(
     unflatten(
@@ -55,10 +59,11 @@
   );
 </script>
 
-{#each items as item, index (item.__sc_item_id ?? index)}
+{#each items as item, index (isObject(item) ? (item.__sc_item_id ?? index) : index)}
   <VisibilityObserver>
+    {@const itemKeyPath = `${keyPath}.${index}`}
     {@const subFieldName = Array.isArray(types)
-      ? $entryDraft?.currentValues[locale][`${keyPath}.${index}.${typeKey}`]
+      ? $entryDraft?.currentValues[locale][`${itemKeyPath}.${typeKey}`]
       : undefined}
     {@const typeConfig = types?.find(({ name }) => name === subFieldName)}
     {@const label = typeConfig ? typeConfig.label || typeConfig.name : undefined}
@@ -69,7 +74,10 @@
       {#each subFields as subField (subField.name)}
         <VisibilityObserver>
           <FieldPreview
-            keyPath={field ? `${keyPath}.${index}` : `${keyPath}.${index}.${subField.name}`}
+            keyPath={hasSingleSubField ? itemKeyPath : `${itemKeyPath}.${subField.name}`}
+            typedKeyPath={hasVariableTypes
+              ? `${keyPath}.*<${subFieldName}>.${subField.name}`
+              : `${keyPath}.*.${subField.name}`}
             {locale}
             fieldConfig={subField}
           />

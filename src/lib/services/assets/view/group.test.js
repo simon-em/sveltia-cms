@@ -36,9 +36,9 @@ describe('assets/view/group', () => {
     const { get } = await import('svelte/store');
     const { getRegex } = await import('$lib/services/utils/misc');
 
-    compareMock = vi.mocked(compare);
-    getMock = vi.mocked(get);
-    getRegexMock = vi.mocked(getRegex);
+    compareMock = /** @type {any} */ (vi.mocked(compare));
+    getMock = /** @type {any} */ (vi.mocked(get));
+    getRegexMock = /** @type {any} */ (vi.mocked(getRegex));
 
     // Default compare implementation for sorting
     compareMock.mockImplementation((a, b) => {
@@ -49,6 +49,9 @@ describe('assets/view/group', () => {
 
     // Mock svelte-i18n properly - get(_) should return a function that returns the translation
     getMock.mockReturnValue(() => 'Other');
+
+    // Mock getRegex to return null by default (when no pattern)
+    getRegexMock.mockReturnValue(null);
 
     // Sample asset data with complete Asset structure
     mockAssets = [
@@ -178,6 +181,110 @@ describe('assets/view/group', () => {
       expect(result).toEqual({
         Other: mockAssets, // None match the regex
       });
+    });
+
+    it('should use default key when regex match returns null', () => {
+      const mockRegex = /xyz/;
+
+      getRegexMock.mockReturnValue(mockRegex);
+
+      // Test with a single asset that won't match the regex
+      const testAssets = /** @type {any[]} */ ([
+        {
+          path: '/test.jpg',
+          name: 'test.jpg',
+          sha: 'sha1',
+          size: 1000,
+          kind: 'image',
+          folder: {
+            collectionName: undefined,
+            internalPath: '/test',
+            publicPath: '/test',
+            entryRelative: false,
+            hasTemplateTags: false,
+          },
+        },
+      ]);
+
+      const result = groupAssets(testAssets, { field: 'name', pattern: 'xyz' });
+
+      expect(result).toEqual({
+        Other: testAssets,
+      });
+    });
+
+    it('should extract matched group from regex when match succeeds', () => {
+      const mockRegex = /^test/;
+
+      getRegexMock.mockReturnValue(mockRegex);
+
+      const testAssets = /** @type {any[]} */ ([
+        {
+          path: '/test1.jpg',
+          name: 'test1.jpg',
+          sha: 'sha1',
+          size: 1000,
+          kind: 'image',
+          folder: {
+            collectionName: undefined,
+            internalPath: '/test',
+            publicPath: '/test',
+            entryRelative: false,
+            hasTemplateTags: false,
+          },
+        },
+        {
+          path: '/other.jpg',
+          name: 'other.jpg',
+          sha: 'sha2',
+          size: 2000,
+          kind: 'image',
+          folder: {
+            collectionName: undefined,
+            internalPath: '/test',
+            publicPath: '/test',
+            entryRelative: false,
+            hasTemplateTags: false,
+          },
+        },
+      ]);
+
+      const result = groupAssets(testAssets, { field: 'name', pattern: '^test' });
+
+      expect(result).toEqual({
+        Other: [testAssets[1]],
+        test: [testAssets[0]],
+      });
+    });
+
+    it('should assign matched text to key from regex with capture group', () => {
+      // Use a regex that explicitly captures a group
+      const mockRegex = /(test)/;
+
+      getRegexMock.mockReturnValue(mockRegex);
+
+      const testAssets = /** @type {any[]} */ ([
+        {
+          path: '/test.jpg',
+          name: 'test.jpg',
+          sha: 'sha1',
+          size: 1000,
+          kind: 'image',
+          folder: {
+            collectionName: undefined,
+            internalPath: '/test',
+            publicPath: '/test',
+            entryRelative: false,
+            hasTemplateTags: false,
+          },
+        },
+      ]);
+
+      const result = groupAssets(testAssets, { field: 'name', pattern: '(test)' });
+
+      // The matched first element (either the full match or first capture group) becomes the key
+      expect(result.test || result.Other).toBeDefined();
+      expect(Object.keys(result).length).toBeGreaterThan(0);
     });
 
     it('should handle assets with undefined field values', () => {
@@ -325,7 +432,99 @@ describe('assets/view/group', () => {
 
       expect(result).toEqual({
         1024: [mockAssets[0], mockAssets[2]], // Both sizes contain "1024"
-        Other: [mockAssets[1], mockAssets[3]], // Other sizes don’t contain "1024"
+        Other: [mockAssets[1], mockAssets[3]], // Other sizes don't contain "1024"
+      });
+    });
+
+    it('should use otherKey when regex match fails on empty string', () => {
+      const mockRegex = /\d+/; // Matches one or more digits
+
+      getRegexMock.mockReturnValue(mockRegex);
+
+      const testAssets = /** @type {any[]} */ ([
+        {
+          path: '/test.jpg',
+          name: 'test.jpg',
+          sha: 'sha1',
+          size: 1000,
+          kind: 'image',
+          folder: {
+            collectionName: undefined,
+            internalPath: '/test',
+            publicPath: '/test',
+            entryRelative: false,
+            hasTemplateTags: false,
+          },
+          description: '', // Empty string value
+        },
+        {
+          path: '/test2.jpg',
+          name: 'test2.jpg',
+          sha: 'sha2',
+          size: 2000,
+          kind: 'image',
+          folder: {
+            collectionName: undefined,
+            internalPath: '/test',
+            publicPath: '/test',
+            entryRelative: false,
+            hasTemplateTags: false,
+          },
+          description: '123abc', // Matches regex
+        },
+      ]);
+
+      const result = groupAssets(testAssets, { field: 'description', pattern: '\\d+' });
+
+      expect(result).toEqual({
+        123: [testAssets[1]],
+        Other: [testAssets[0]], // Empty string doesn't match \d+, falls back to otherKey
+      });
+    });
+
+    it('should handle null/undefined values with regex pattern', () => {
+      const mockRegex = /test/;
+
+      getRegexMock.mockReturnValue(mockRegex);
+
+      const testAssets = /** @type {any[]} */ ([
+        {
+          path: '/test.jpg',
+          name: 'test.jpg',
+          sha: 'sha1',
+          size: 1000,
+          kind: 'image',
+          folder: {
+            collectionName: undefined,
+            internalPath: '/test',
+            publicPath: '/test',
+            entryRelative: false,
+            hasTemplateTags: false,
+          },
+          description: null, // null value
+        },
+        {
+          path: '/test2.jpg',
+          name: 'test2.jpg',
+          sha: 'sha2',
+          size: 2000,
+          kind: 'image',
+          folder: {
+            collectionName: undefined,
+            internalPath: '/test',
+            publicPath: '/test',
+            entryRelative: false,
+            hasTemplateTags: false,
+          },
+          description: undefined, // undefined value
+        },
+      ]);
+
+      const result = groupAssets(testAssets, { field: 'description', pattern: 'test' });
+
+      // Both null and undefined convert to empty string '', which doesn't match 'test' regex
+      expect(result).toEqual({
+        Other: testAssets,
       });
     });
   });

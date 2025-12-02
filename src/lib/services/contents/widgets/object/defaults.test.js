@@ -4,6 +4,20 @@ import { getDefaultValueMap } from './defaults';
 
 vi.mock('$lib/services/config');
 
+// Mock user store with default empty values
+vi.mock('$lib/services/user', async () => {
+  const { writable } = await import('svelte/store');
+
+  return {
+    user: writable({
+      backendName: 'github',
+      login: '',
+      name: '',
+      email: '',
+    }),
+  };
+});
+
 /**
  * @import { ObjectField } from '$lib/types/public';
  */
@@ -519,6 +533,22 @@ describe('Test getDefaultValueMap()', () => {
         'root.level1.level2.level3.array.0.item': 'first',
         'root.level1.level2.level3.array.1.item': 'second',
       });
+    });
+  });
+
+  describe('edge cases', () => {
+    test('should return empty object for required field with no subfields and no default', () => {
+      /** @type {ObjectField} */
+      const fieldConfig = {
+        ...baseFieldConfig,
+        required: true,
+        fields: [],
+      };
+
+      const keyPath = 'metadata';
+      const result = getDefaultValueMap({ fieldConfig, keyPath, locale: '_default' });
+
+      expect(result).toEqual({});
     });
   });
 });

@@ -1,21 +1,48 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import anthropicTranslator, { normalizeLanguage } from './anthropic.js';
+import anthropicTranslator, { availability } from './anthropic.js';
 
-// Mock the getLocaleLabel function
+// Mock the i18n functions
 vi.mock('$lib/services/contents/i18n', () => ({
-  getLocaleLabel: vi.fn((locale) => {
+  getLocaleLabel: vi.fn((locale, options) => {
+    // Normalize locale code (handle both - and _ separators, case variations)
+    const normalizedLocale = String(locale || '')
+      .toLowerCase()
+      .replace(/_/g, '-');
+
     /** @type {Record<string, string>} */
     const labels = {
+      // Base languages
       en: 'English',
       fr: 'French',
       de: 'German',
       es: 'Spanish',
       zh: 'Chinese',
       ja: 'Japanese',
+      pt: 'Portuguese',
+      // Regional variants
+      'en-ca': 'Canadian English',
+      'en-us': 'American English',
+      'en-gb': 'British English',
+      'fr-ca': 'Canadian French',
+      'fr-fr': 'French (France)',
+      'zh-cn': 'Chinese (China)',
+      'zh-tw': 'Chinese (Taiwan)',
+      'pt-br': 'Brazilian Portuguese',
+      'pt-pt': 'European Portuguese',
+      'es-mx': 'Mexican Spanish',
+      'es-es': 'Spanish (Spain)',
+      'de-de': 'German (Germany)',
+      'de-at': 'Austrian German',
     };
 
-    return labels[locale] || locale;
+    // When displayLocale is 'en', undefined, or not provided, return the English name
+    if (!options || !options.displayLocale || options.displayLocale === 'en') {
+      return labels[normalizedLocale] || undefined;
+    }
+
+    // Otherwise return the label or the locale itself (for other display locales)
+    return labels[normalizedLocale] || locale;
   }),
 }));
 
@@ -32,8 +59,8 @@ describe('Anthropic Translator Service', () => {
       expect(anthropicTranslator.serviceId).toBe('anthropic');
       expect(anthropicTranslator.serviceLabel).toBe('Anthropic Claude');
       expect(anthropicTranslator.apiLabel).toBe('Anthropic API');
-      expect(anthropicTranslator.developerURL).toBe('https://docs.anthropic.com/en/api/overview');
-      expect(anthropicTranslator.apiKeyURL).toBe('https://console.anthropic.com/settings/keys');
+      expect(anthropicTranslator.developerURL).toBe('https://docs.claude.com/en/api/overview');
+      expect(anthropicTranslator.apiKeyURL).toBe('https://platform.claude.com/settings/keys');
       expect(anthropicTranslator.apiKeyPattern).toBeInstanceOf(RegExp);
     });
 
@@ -61,63 +88,35 @@ describe('Anthropic Translator Service', () => {
     });
   });
 
-  describe('Language Normalization', () => {
-    describe('normalizeLanguage', () => {
-      it('should normalize basic language codes', () => {
-        expect(normalizeLanguage('en')).toBe('en');
-        expect(normalizeLanguage('fr')).toBe('fr');
-        expect(normalizeLanguage('de')).toBe('de');
-        expect(normalizeLanguage('ja')).toBe('ja');
-        expect(normalizeLanguage('zh')).toBe('zh');
-      });
-
-      it('should handle locale codes with regions', () => {
-        expect(normalizeLanguage('en-US')).toBe('en');
-        expect(normalizeLanguage('fr-FR')).toBe('fr');
-        expect(normalizeLanguage('zh-CN')).toBe('zh');
-        expect(normalizeLanguage('pt-BR')).toBe('pt');
-      });
-
-      it('should handle case variations', () => {
-        expect(normalizeLanguage('EN')).toBe('en');
-        expect(normalizeLanguage('Fr')).toBe('fr');
-        expect(normalizeLanguage('ZH-CN')).toBe('zh');
-      });
-
-      it('should handle underscore separators', () => {
-        expect(normalizeLanguage('en_US')).toBe('en');
-        expect(normalizeLanguage('zh_CN')).toBe('zh');
-      });
-
-      it('should return undefined for unsupported languages', () => {
-        expect(normalizeLanguage('unsupported')).toBeUndefined();
-        expect(normalizeLanguage('xyz')).toBeUndefined();
-        expect(normalizeLanguage('')).toBeUndefined();
-      });
+  describe('Availability', () => {
+    it('should return true for supported language pairs', async () => {
+      await expect(availability({ sourceLanguage: 'en', targetLanguage: 'fr' })).resolves.toBe(
+        true,
+      );
+      await expect(
+        availability({ sourceLanguage: 'fr-FR', targetLanguage: 'zh-CN' }),
+      ).resolves.toBe(true);
+      await expect(availability({ sourceLanguage: 'es', targetLanguage: 'ja' })).resolves.toBe(
+        true,
+      );
     });
 
-    describe('getSourceLanguage', () => {
-      it('should return normalized language codes', () => {
-        expect(anthropicTranslator.getSourceLanguage('en')).toBe('en');
-        expect(anthropicTranslator.getSourceLanguage('fr-FR')).toBe('fr');
-        expect(anthropicTranslator.getSourceLanguage('zh-CN')).toBe('zh');
-      });
-
-      it('should return undefined for unsupported languages', () => {
-        expect(anthropicTranslator.getSourceLanguage('unsupported')).toBeUndefined();
-      });
+    it('should return false for unsupported source languages', async () => {
+      await expect(
+        availability({ sourceLanguage: 'unsupported', targetLanguage: 'fr' }),
+      ).resolves.toBe(false);
     });
 
-    describe('getTargetLanguage', () => {
-      it('should return normalized language codes', () => {
-        expect(anthropicTranslator.getTargetLanguage('en')).toBe('en');
-        expect(anthropicTranslator.getTargetLanguage('fr-FR')).toBe('fr');
-        expect(anthropicTranslator.getTargetLanguage('zh-CN')).toBe('zh');
-      });
+    it('should return false for unsupported target languages', async () => {
+      await expect(
+        availability({ sourceLanguage: 'en', targetLanguage: 'unsupported' }),
+      ).resolves.toBe(false);
+    });
 
-      it('should return undefined for unsupported languages', () => {
-        expect(anthropicTranslator.getTargetLanguage('unsupported')).toBeUndefined();
-      });
+    it('should return false when both languages are unsupported', async () => {
+      await expect(
+        availability({ sourceLanguage: 'unsupported1', targetLanguage: 'unsupported2' }),
+      ).resolves.toBe(false);
     });
   });
 
@@ -126,8 +125,8 @@ describe('Anthropic Translator Service', () => {
       'sk-ant-api03-abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_abcdefghijklmnopqrstuvwx';
 
     const mockOptions = {
-      sourceLocale: 'en',
-      targetLocale: 'fr',
+      sourceLanguage: 'en',
+      targetLanguage: 'fr',
       apiKey: mockApiKey,
     };
 
@@ -135,9 +134,7 @@ describe('Anthropic Translator Service', () => {
       const mockResponse = {
         content: [
           {
-            text: JSON.stringify({
-              translations: ['Bonjour le monde', 'Comment allez-vous ?'],
-            }),
+            text: JSON.stringify(['Bonjour le monde', 'Comment allez-vous ?']),
           },
         ],
       };
@@ -166,7 +163,7 @@ describe('Anthropic Translator Service', () => {
             'anthropic-version': '2023-06-01',
             'anthropic-dangerous-direct-browser-access': 'true',
           }),
-          body: expect.stringContaining('"model":"claude-3-5-haiku-latest"'),
+          body: expect.stringContaining('"model":"claude-haiku-4-5"'),
         }),
       );
     });
@@ -175,9 +172,7 @@ describe('Anthropic Translator Service', () => {
       const mockResponse = {
         content: [
           {
-            text: JSON.stringify({
-              translations: ['Hola mundo'],
-            }),
+            text: JSON.stringify(['Hola mundo']),
           },
         ],
       };
@@ -195,8 +190,8 @@ describe('Anthropic Translator Service', () => {
       const texts = ['Hello world'];
 
       const options = {
-        sourceLocale: 'en',
-        targetLocale: 'es',
+        sourceLanguage: 'en',
+        targetLanguage: 'es',
         apiKey: mockApiKey,
       };
 
@@ -216,9 +211,7 @@ describe('Anthropic Translator Service', () => {
       const mockResponse = {
         content: [
           {
-            text: JSON.stringify({
-              translations: ['# Bonjour **monde**'],
-            }),
+            text: JSON.stringify(['# Bonjour **monde**']),
           },
         ],
       };
@@ -248,8 +241,8 @@ describe('Anthropic Translator Service', () => {
 
     it('should throw error for unsupported source language', async () => {
       const options = {
-        sourceLocale: 'unsupported',
-        targetLocale: 'fr',
+        sourceLanguage: 'unsupported',
+        targetLanguage: 'fr',
         apiKey: mockApiKey,
       };
 
@@ -260,8 +253,8 @@ describe('Anthropic Translator Service', () => {
 
     it('should throw error for unsupported target language', async () => {
       const options = {
-        sourceLocale: 'en',
-        targetLocale: 'unsupported',
+        sourceLanguage: 'en',
+        targetLanguage: 'unsupported',
         apiKey: mockApiKey,
       };
 
@@ -288,6 +281,43 @@ describe('Anthropic Translator Service', () => {
 
       await expect(anthropicTranslator.translate(['test'], mockOptions)).rejects.toThrow(
         'Anthropic API error: 401 Unauthorized - Invalid API key',
+      );
+    });
+
+    it('should handle API error responses without error message', async () => {
+      const mockFetch = vi.mocked(fetch);
+
+      mockFetch.mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            // No error.message field
+          }),
+          {
+            status: 500,
+            statusText: 'Internal Server Error',
+            headers: { 'Content-Type': 'application/json' },
+          },
+        ),
+      );
+
+      await expect(anthropicTranslator.translate(['test'], mockOptions)).rejects.toThrow(
+        'Anthropic API error: 500 Internal Server Error',
+      );
+    });
+
+    it('should handle API errors when error JSON parsing fails', async () => {
+      const mockFetch = vi.mocked(fetch);
+
+      // Create a Response that fails to parse as JSON
+      const mockResponse = new Response('Invalid JSON', {
+        status: 503,
+        statusText: 'Service Unavailable',
+      });
+
+      mockFetch.mockResolvedValueOnce(mockResponse);
+
+      await expect(anthropicTranslator.translate(['test'], mockOptions)).rejects.toThrow(
+        'Anthropic API error: 503 Service Unavailable',
       );
     });
 
@@ -367,9 +397,7 @@ describe('Anthropic Translator Service', () => {
       const mockResponse = {
         content: [
           {
-            text: JSON.stringify({
-              translations: ['Only one translation'], // Should have 2
-            }),
+            text: JSON.stringify(['Only one translation']), // Should have 2
           },
         ],
       };
@@ -416,9 +444,7 @@ describe('Anthropic Translator Service', () => {
       const mockResponse = {
         content: [
           {
-            text: JSON.stringify({
-              translations: ['Test'],
-            }),
+            text: JSON.stringify(['Test']),
           },
         ],
       };
@@ -439,7 +465,7 @@ describe('Anthropic Translator Service', () => {
         /** @type {string} */ (vi.mocked(fetch).mock.calls[0][1]?.body),
       );
 
-      expect(requestBody.model).toBe('claude-3-5-haiku-latest');
+      expect(requestBody.model).toBe('claude-haiku-4-5');
       expect(requestBody.temperature).toBe(0.3);
       expect(requestBody.max_tokens).toBe(4000);
     });

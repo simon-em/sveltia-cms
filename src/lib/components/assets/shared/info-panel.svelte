@@ -6,7 +6,7 @@
   import { _, locale as appLocale } from 'svelte-i18n';
 
   import AssetPreview from '$lib/components/assets/shared/asset-preview.svelte';
-  import StaticMap from '$lib/components/common/static-map.svelte';
+  import LeafletMap from '$lib/components/common/leaflet-map.svelte';
   import { goto } from '$lib/services/app/navigation';
   import { defaultAssetDetails, getAssetDetails } from '$lib/services/assets/info';
   import { isMediaKind } from '$lib/services/assets/kinds';
@@ -42,6 +42,7 @@
   /** @type {AssetDetails} */
   let details = $state({ ...defaultAssetDetails });
 
+  // @todo Fetch file size and commit info on demand for GitLab
   const { path, size, kind, commitAuthor, commitDate } = $derived(asset);
   const { publicURL, repoBlobURL, dimensions, duration, createdDate, coordinates, usedEntries } =
     $derived(details);
@@ -99,14 +100,16 @@
       })}
     </p>
   </section>
-  <section>
-    <h4>{$_('size')}</h4>
-    <p>
-      {#key $appLocale}
-        {formatSize(size)}
-      {/key}
-    </p>
-  </section>
+  {#if !!size}
+    <section>
+      <h4>{$_('size')}</h4>
+      <p>
+        {#key $appLocale}
+          {formatSize(size)}
+        {/key}
+      </p>
+    </section>
+  {/if}
   {#if canPreview}
     <section>
       <h4>{$_('dimensions')}</h4>
@@ -187,7 +190,7 @@
   {#if coordinates}
     <section>
       <h4>{$_('location')}</h4>
-      <StaticMap {coordinates} />
+      <LeafletMap {coordinates} />
     </section>
   {/if}
 </div>

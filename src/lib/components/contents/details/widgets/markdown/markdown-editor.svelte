@@ -1,7 +1,7 @@
 <!--
   @component
   Implement the editor for the Markdown widget.
-  @see https://decapcms.org/docs/widgets/#markdown
+  @see https://decapcms.org/docs/widgets/#Markdown
 -->
 <script>
   import { TextEditor } from '@sveltia/ui';
@@ -15,6 +15,7 @@
   import { getContext, untrack } from 'svelte';
 
   import { entryDraft } from '$lib/services/contents/draft';
+  import { getCanonicalLocale } from '$lib/services/contents/i18n';
   import {
     BUILTIN_COMPONENTS,
     BUTTON_NAME_MAP,
@@ -368,7 +369,7 @@
     -->
     {#key JSON.stringify(fieldConfig)}
       <TextEditor
-        lang={locale}
+        lang={getCanonicalLocale(locale)}
         {modes}
         {buttons}
         {components}

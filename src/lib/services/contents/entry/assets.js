@@ -10,13 +10,13 @@ import { isCollectionIndexFile } from '$lib/services/contents/collection/index-f
 import { getField } from '$lib/services/contents/entry/fields';
 
 /**
- * @import { Asset, Entry, EntryCollection } from '$lib/types/private';
+ * @import { Asset, Entry, InternalEntryCollection } from '$lib/types/private';
  * @import { FieldKeyPath } from '$lib/types/public';
  */
 
 /**
  * Get the given entry’s thumbnail URL.
- * @param {EntryCollection} collection Entry’s collection.
+ * @param {InternalEntryCollection} collection Entry’s collection.
  * @param {Entry} entry Entry.
  * @returns {Promise<string | undefined>} URL.
  */
@@ -86,7 +86,7 @@ export const getAssociatedAssets = ({ entry, collectionName, fileName, relative 
   const assets = /** @type {Asset[]} */ (
     Object.values(locales)
       .map(({ content }) =>
-        Object.entries(content).map(([keyPath, value]) => {
+        Object.entries(content ?? {}).map(([keyPath, value]) => {
           if (
             typeof value === 'string' &&
             (relative ? !/^[/@]/.test(value) : true) &&

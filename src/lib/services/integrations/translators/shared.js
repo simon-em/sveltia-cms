@@ -5,15 +5,19 @@
 import { getLocaleLabel } from '$lib/services/contents/i18n';
 
 /**
+ * Normalize a locale code to a language label in English that AI services can understand.
+ * @param {string} locale Locale code, e.g., 'en', 'fr-FR', 'zh-CN'.
+ * @returns {string | undefined} Normalized language label, e.g., 'English', 'French', 'Chinese'.
+ */
+export const normalizeLanguage = (locale) => getLocaleLabel(locale, { displayLocale: 'en' });
+
+/**
  * Generate a standardized system prompt for AI translation services.
- * @param {string} sourceLanguage Source language code.
- * @param {string} targetLanguage Target language code.
+ * @param {string} sourceLanguageName Source language name, e.g., 'English', 'Canadian French'.
+ * @param {string} targetLanguageName Target language name, e.g., 'French', 'Brazilian Portuguese'.
  * @returns {string} System prompt for translation.
  */
-export const createTranslationSystemPrompt = (sourceLanguage, targetLanguage) => {
-  const sourceLanguageName = getLocaleLabel(sourceLanguage);
-  const targetLanguageName = getLocaleLabel(targetLanguage);
-
+export const createTranslationSystemPrompt = (sourceLanguageName, targetLanguageName) => {
   const baseInstructions = [
     '- CRITICAL: Leave content EXACTLY unchanged within HTML elements that have translate="no"',
     '- CRITICAL: Leave content EXACTLY unchanged within HTML elements that have class="notranslate"',
@@ -32,8 +36,8 @@ export const createTranslationSystemPrompt = (sourceLanguage, targetLanguage) =>
   ];
 
   const responseInstructions = [
-    '- Return your response as a valid JSON object with a "translations" array',
-    '- The "translations" array should contain the translated texts in the same order as provided',
+    '- Return your response as a valid JSON array containing the translated texts',
+    '- The array should contain the translated texts in the same order as provided',
     '- VALIDATION: Before responding, double-check that any translate="no", class="notranslate", or notranslate comment content remains EXACTLY the same',
   ];
 
@@ -41,16 +45,17 @@ export const createTranslationSystemPrompt = (sourceLanguage, targetLanguage) =>
 
   return (
     'You are a professional translator. Translate the given texts from ' +
-    `${sourceLanguageName} to ${targetLanguageName}.
-
-IMPORTANT INSTRUCTIONS:
-${allInstructions.join('\n')}
-
-RESPONSE FORMAT:
-Return a JSON object with this exact structure:
-{
-  "translations": ["translated text 1", "translated text 2", ...]
-}`
+    `${sourceLanguageName} to ${targetLanguageName}. ` +
+    'Your response must be valid JSON that can be parsed directly.\n\n' +
+    `IMPORTANT INSTRUCTIONS:\n${allInstructions.join('\n')}\n\n` +
+    'OUTPUT FORMAT:\n' +
+    '- Output ONLY valid JSON, nothing else\n' +
+    '- Do NOT use markdown code blocks or formatting\n' +
+    '- Do NOT add any explanation or commentary\n' +
+    '- Your entire response should be parseable by JSON.parse()\n' +
+    '- Start your response with [ and end with ]\n\n' +
+    'Required JSON structure:\n' +
+    '["translation 1", "translation 2", ...]'
   );
 };
 
@@ -60,4 +65,6 @@ Return a JSON object with this exact structure:
  * @returns {string} User prompt for translation.
  */
 export const createTranslationUserPrompt = (texts) =>
-  `Translate these texts:\n${JSON.stringify(texts)}`;
+  'Translate these texts and return ONLY valid JSON (no markdown, no code blocks):\n' +
+  `${JSON.stringify(texts)}\n\n` +
+  'Respond with JSON only:';

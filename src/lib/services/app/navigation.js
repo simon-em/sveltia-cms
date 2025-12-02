@@ -3,13 +3,13 @@ import { flushSync } from 'svelte';
 import { derived, get, writable } from 'svelte/store';
 
 import { showAssetOverlay } from '$lib/services/assets/view';
-import { siteConfig } from '$lib/services/config';
+import { cmsConfig } from '$lib/services/config';
 import { showContentOverlay } from '$lib/services/contents/editor';
 import { isSmallScreen } from '$lib/services/user/env';
 
 /**
  * @import { Readable, Writable } from 'svelte/store';
- * @import { InternalSiteConfig } from '$lib/types/private';
+ * @import { InternalCmsConfig } from '$lib/types/private';
  */
 
 /**
@@ -34,10 +34,12 @@ export const hasOverlay = derived(
   [showContentOverlay, showAssetOverlay],
   ([_showContentOverlay, _showAssetOverlay]) => _showContentOverlay || _showAssetOverlay,
 );
+
 /**
  * @type {Writable<string>}
  */
 export const selectedPageName = writable('');
+
 /**
  * Page status to be announced by screen readers.
  * @type {Writable<string>}
@@ -65,14 +67,13 @@ export const parseLocation = (href = window.location.href) => {
  * @param {() => void} updateContent Function to trigger a content update.
  * @see https://developer.chrome.com/docs/web-platform/view-transitions/same-document
  */
-const startViewTransition = (transitionType, updateContent) => {
+export const startViewTransition = (transitionType, updateContent) => {
   if (!get(isSmallScreen) || !document.startViewTransition) {
     updateContent();
     return;
   }
 
-  document.startViewTransition({
-    // @ts-ignore
+  const options = {
     types: [transitionType],
     // eslint-disable-next-line jsdoc/require-jsdoc
     update: async () => {
@@ -84,7 +85,16 @@ const startViewTransition = (transitionType, updateContent) => {
         });
       });
     },
-  });
+  };
+
+  // Firefox for Android currently doesn’t support the options parameter of `startViewTransition`
+  // and will throw a `TypeError` if provided.
+  // @see https://developer.mozilla.org/en-US/docs/Web/API/Document/startViewTransition
+  try {
+    document.startViewTransition(options);
+  } catch {
+    updateContent();
+  }
 };
 
 /**
@@ -177,8 +187,8 @@ export const goBack = (path, options = {}) => {
  * Open the production site in a new browser tab.
  */
 export const openProductionSite = () => {
-  const { display_url: displayURL, _siteURL: siteURL } = /** @type {InternalSiteConfig} */ (
-    get(siteConfig)
+  const { display_url: displayURL, _siteURL: siteURL } = /** @type {InternalCmsConfig} */ (
+    get(cmsConfig)
   );
 
   window.open(displayURL || siteURL || '/', '_blank');

@@ -1,7 +1,7 @@
 import { toRaw } from '@sveltia/utils/object';
 import { escapeRegExp } from '@sveltia/utils/string';
-import * as TOML from 'smol-toml';
-import YAML from 'yaml';
+import { parse as libParseTOML } from 'smol-toml';
+import { parse as libParseYAML } from 'yaml';
 
 import { getCollection } from '$lib/services/contents/collection';
 import { getCollectionFile } from '$lib/services/contents/collection/files';
@@ -13,9 +13,9 @@ import {
 /**
  * @import {
  * BaseEntryListItem,
- * EntryCollection,
  * InternalCollection,
- * InternalCollectionFile
+ * InternalCollectionFile,
+ * InternalEntryCollection,
  * } from '$lib/types/private';
  * @import { FrontMatterFormat } from '$lib/types/public';
  */
@@ -33,14 +33,15 @@ export const parseJSON = (str) => JSON.parse(str);
  * @param {string} str TOML document.
  * @returns {any} Parsed object.
  */
-export const parseTOML = (str) => toRaw(TOML.parse(str));
+export const parseTOML = (str) => toRaw(libParseTOML(str));
 
 /**
  * Parse a YAML document using a library.
  * @param {string} str YAML document.
+ * @param {object} [options] Parsing options.
  * @returns {any} Parsed object.
  */
-export const parseYAML = (str) => YAML.parse(str);
+export const parseYAML = (str, options) => libParseYAML(str, options);
 
 /**
  * Detect the Markdown front matter serialization format by checking a delimiter in the content.
@@ -73,7 +74,7 @@ export const detectFrontMatterFormat = (text) => {
 export const parseFrontMatter = ({ collection, collectionFile, format, text }) => {
   const {
     _file: { format: _format, fmDelimiters },
-  } = collectionFile ?? /** @type {EntryCollection} */ (collection);
+  } = collectionFile ?? /** @type {InternalEntryCollection} */ (collection);
 
   const [startDelimiter, endDelimiter] = (_format === 'frontmatter'
     ? getFrontMatterDelimiters({ format, delimiter: fmDelimiters })
@@ -134,7 +135,7 @@ export const parseEntryFile = async ({ text = '', path, folder: { collectionName
 
   let {
     _file: { format },
-  } = collectionFile ?? /** @type {EntryCollection} */ (collection);
+  } = collectionFile ?? /** @type {InternalEntryCollection} */ (collection);
 
   const customParser = customFileFormatRegistry.get(format)?.parser;
 
@@ -160,7 +161,13 @@ export const parseEntryFile = async ({ text = '', path, folder: { collectionName
     }
 
     if (/^(?:yaml|toml|json)-frontmatter$/.test(format)) {
-      return parseFrontMatter({ collection, collectionFile, format, text });
+      return parseFrontMatter({
+        collection,
+        collectionFile,
+        // eslint-disable-next-line object-shorthand
+        format: /** @type {FrontMatterFormat} */ (format),
+        text,
+      });
     }
   } catch (/** @type {any} */ ex) {
     throw new Error(`${path} could not be parsed due to ${ex.name}: ${ex.message}`);

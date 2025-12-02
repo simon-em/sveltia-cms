@@ -1,8 +1,8 @@
-import * as TOML from 'smol-toml';
+import { stringify as stringifyTOML } from 'smol-toml';
 import { get } from 'svelte/store';
-import YAML from 'yaml';
+import { stringify as stringifyYAML } from 'yaml';
 
-import { siteConfig } from '$lib/services/config';
+import { cmsConfig } from '$lib/services/config';
 import { customFileFormatRegistry } from '$lib/services/contents/file/config';
 
 /**
@@ -17,7 +17,7 @@ import { customFileFormatRegistry } from '$lib/services/contents/file/config';
  * @returns {string} Formatted document.
  * @see https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/JSON/stringify
  */
-export const formatJSON = (obj, options = get(siteConfig)?.output?.json ?? {}) => {
+export const formatJSON = (obj, options = get(cmsConfig)?.output?.json ?? {}) => {
   const {
     indent_style: indentStyle = 'space',
     indent_size: indentSize = indentStyle === 'tab' ? 1 : 2,
@@ -36,7 +36,7 @@ export const formatJSON = (obj, options = get(siteConfig)?.output?.json ?? {}) =
  * @returns {string} Formatted document.
  * @see https://github.com/squirrelchat/smol-toml
  */
-export const formatTOML = (obj) => TOML.stringify(obj).trim();
+export const formatTOML = (obj) => stringifyTOML(obj).trim();
 
 /**
  * Format the given object as a YAML document using a library.
@@ -50,14 +50,15 @@ export const formatTOML = (obj) => TOML.stringify(obj).trim();
  */
 export const formatYAML = (
   obj,
-  options = get(siteConfig)?.output?.yaml ?? {},
+  options = get(cmsConfig)?.output?.yaml ?? {},
   legacyOptions = {},
 ) => {
-  const { indent_size: indent = 2, quote = 'none' } = options;
+  const { indent_size: indent = 2, indent_sequences: indentSeq = true, quote = 'none' } = options;
   const { quote: legacyQuote = false } = legacyOptions;
 
-  return YAML.stringify(obj, null, {
+  return stringifyYAML(obj, null, {
     indent,
+    indentSeq,
     lineWidth: 0,
     defaultKeyType: 'PLAIN',
     defaultStringType:

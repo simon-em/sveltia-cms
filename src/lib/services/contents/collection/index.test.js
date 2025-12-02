@@ -28,7 +28,7 @@ vi.mock('svelte-i18n', () => ({
   _: { subscribe: vi.fn() },
 }));
 vi.mock('$lib/services/config', () => ({
-  siteConfig: { subscribe: vi.fn() },
+  cmsConfig: { subscribe: vi.fn() },
 }));
 vi.mock('$lib/services/contents/collection/files', () => ({
   getValidCollectionFiles: vi.fn(),
@@ -430,7 +430,7 @@ describe('getCollectionIndex()', () => {
     expect(index).toBe(-1);
   });
 
-  test('returns -1 when siteConfig is undefined', () => {
+  test('returns -1 when cmsConfig is undefined', () => {
     vi.mocked(get).mockReturnValue(undefined);
 
     const index = getCollectionIndex('some-collection');
@@ -486,13 +486,60 @@ describe('getThumbnailFieldNames()', () => {
     expect(getThumbnailFieldNames(collection)).toEqual(['featured', 'attachment']);
   });
 
-  test('returns empty array when no fields and no thumbnail', () => {
+  test('infers image fields by default when thumbnail property is not specified', () => {
     const collection = {
       name: 'posts',
       folder: 'content/posts',
+      fields: [
+        { name: 'title', widget: 'string' },
+        { name: 'featured', widget: 'image' },
+        { name: 'attachment', widget: 'file' },
+      ],
+    };
+
+    expect(getThumbnailFieldNames(collection)).toEqual(['featured', 'attachment']);
+  });
+
+  test('returns empty array when no image/file fields and no explicit thumbnail', () => {
+    const collection = {
+      name: 'posts',
+      folder: 'content/posts',
+      fields: [
+        { name: 'title', widget: 'string' },
+        { name: 'content', widget: 'markdown' },
+      ],
     };
 
     expect(getThumbnailFieldNames(collection)).toEqual([]);
+  });
+
+  test('returns empty array when thumbnail is set to false', () => {
+    const collection = {
+      name: 'posts',
+      folder: 'content/posts',
+      thumbnail: false,
+      fields: [
+        { name: 'featured', widget: 'image' },
+        { name: 'attachment', widget: 'file' },
+      ],
+    };
+
+    expect(getThumbnailFieldNames(collection)).toEqual([]);
+  });
+
+  test('infers image fields when thumbnail is set to true', () => {
+    const collection = {
+      name: 'posts',
+      folder: 'content/posts',
+      thumbnail: true,
+      fields: [
+        { name: 'title', widget: 'string' },
+        { name: 'featured', widget: 'image' },
+        { name: 'attachment', widget: 'file' },
+      ],
+    };
+
+    expect(getThumbnailFieldNames(collection)).toEqual(['featured', 'attachment']);
   });
 });
 
@@ -547,7 +594,7 @@ describe('parseFileCollection()', () => {
     vi.mocked(normalizeI18nConfig).mockReturnValue({ defaultLocale: 'en' });
     vi.mocked(isValidCollectionFile).mockReturnValue(true);
 
-    // Mock siteConfig to include i18n property for normalizeI18nConfig
+    // Mock cmsConfig to include i18n property for normalizeI18nConfig
     vi.mocked(get).mockReturnValue({
       name: 'Test Site',
       i18n: { locales: ['en'], defaultLocale: 'en' },
@@ -653,9 +700,8 @@ describe('getCollection()', () => {
     const { getFileConfig } = await import('$lib/services/contents/file/config');
     const { normalizeI18nConfig } = await import('$lib/services/contents/i18n');
 
-    const { getValidCollectionFiles, isValidCollectionFile } = await import(
-      '$lib/services/contents/collection/files'
-    );
+    const { getValidCollectionFiles, isValidCollectionFile } =
+      await import('$lib/services/contents/collection/files');
 
     vi.mocked(getFileConfig).mockReturnValue({ fullPath: '/content/posts' });
     vi.mocked(normalizeI18nConfig).mockReturnValue({ defaultLocale: 'en' });

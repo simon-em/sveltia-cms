@@ -10,14 +10,14 @@ declare namespace CMS {
     export { registerWidget };
 }
 /**
- * Initialize the CMS, optionally with the given site configuration.
+ * Initialize the CMS, optionally with the given CMS configuration.
  * @param {object} [options] Options.
- * @param {SiteConfig} [options.config] Configuration to be merged with `config.yml`. Include
+ * @param {CmsConfig} [options.config] Configuration to be merged with `config.yml`. Include
  * `load_config_file: false` to prevent the configuration file from being loaded.
  * @see https://decapcms.org/docs/manual-initialization/
  */
 export function init({ config }?: {
-    config?: SiteConfig;
+    config?: CmsConfig;
 }): Promise<void>;
 /**
  * Register a custom entry file format.
@@ -77,7 +77,7 @@ declare function registerPreviewTemplate(name: string, component: ComponentType<
  * @see https://decapcms.org/docs/custom-widgets/
  */
 declare function registerWidget(name: string, control: ComponentType<CustomWidgetControlProps> | string, preview?: ComponentType<CustomWidgetPreviewProps>, schema?: CustomWidgetSchema): void;
-import type { SiteConfig } from './types/public';
+import type { CmsConfig } from './types/public';
 import type { FileParser } from './types/public';
 import type { FileFormatter } from './types/public';
 import type { EditorComponentDefinition } from './types/public';
@@ -87,3 +87,4 @@ import type { ComponentType } from 'react';
 import type { CustomWidgetControlProps } from './types/public';
 import type { CustomWidgetPreviewProps } from './types/public';
 import type { CustomWidgetSchema } from './types/public';
+export type { CmsConfig };

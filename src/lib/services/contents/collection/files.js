@@ -1,6 +1,6 @@
 import { get } from 'svelte/store';
 
-import { siteConfig } from '$lib/services/config';
+import { cmsConfig } from '$lib/services/config';
 import { allEntries } from '$lib/services/contents';
 import { getCollection, getValidCollections } from '$lib/services/contents/collection';
 import { getAssociatedCollections } from '$lib/services/contents/entry';
@@ -8,9 +8,9 @@ import { getAssociatedCollections } from '$lib/services/contents/entry';
 /**
  * @import {
  * Entry,
+ * InternalCmsConfig,
  * InternalCollection,
  * InternalCollectionFile,
- * InternalSiteConfig,
  * } from '$lib/types/private';
  * @import { CollectionDivider, CollectionFile } from '$lib/types/public';
  */
@@ -102,7 +102,7 @@ export const getCollectionFileEntry = (collectionName, fileName) =>
  */
 export const getCollectionFileIndex = (collectionName, fileName) => {
   if (collectionName && fileName) {
-    const { collections, singletons } = /** @type {InternalSiteConfig} */ (get(siteConfig));
+    const { collections, singletons } = /** @type {InternalCmsConfig} */ (get(cmsConfig));
 
     if (collectionName === '_singletons') {
       if (Array.isArray(singletons)) {
@@ -112,11 +112,13 @@ export const getCollectionFileIndex = (collectionName, fileName) => {
       return -1;
     }
 
-    return (
-      getValidCollections({ collections })
-        .find(({ name }) => name === collectionName)
-        ?.files?.findIndex(({ name }) => name === fileName) ?? -1
+    const collection = getValidCollections({ collections }).find(
+      ({ name }) => name === collectionName,
     );
+
+    if (collection && 'files' in collection) {
+      return collection.files.findIndex(({ name }) => name === fileName);
+    }
   }
 
   return -1;

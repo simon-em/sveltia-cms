@@ -12,7 +12,7 @@ import { writable } from 'svelte/store';
  * @property {'info' | 'success' | 'error'} status Status of the toast.
  * @property {string | undefined} message Message to display in the toast.
  * @property {number} count Number of copies made.
- * @property {InternalLocaleCode | undefined} sourceLocale Source locale for the copy.
+ * @property {InternalLocaleCode | undefined} sourceLanguage Source locale for the copy.
  */
 
 /**
@@ -26,7 +26,7 @@ export const showContentOverlay = writable(false);
 export const showDuplicateToast = writable(false);
 
 /**
- * @type {Writable<{ show: boolean, multiple: boolean, resolve?: Function }>}
+ * @type {Writable<{ show: boolean, multiple: boolean, resolve?: (value?: string) => void }>}
  */
 export const translatorApiKeyDialogState = writable({ show: false, multiple: false });
 
@@ -40,18 +40,18 @@ export const copyFromLocaleToast = writable({
   status: 'success',
   message: undefined,
   count: 1,
-  sourceLocale: undefined,
+  sourceLanguage: undefined,
 });
 
 /**
  * @type {Writable<?EntryEditorPane>}
  */
-export const editorLeftPane = writable(null);
+export const editorFirstPane = writable(null);
 
 /**
  * @type {Writable<?EntryEditorPane>}
  */
-export const editorRightPane = writable(null);
+export const editorSecondPane = writable(null);
 
 /**
  * View settings for the Select Assets dialog.

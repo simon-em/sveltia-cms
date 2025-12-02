@@ -12,19 +12,19 @@
   import { initAppLocale } from '$lib/services/app/i18n';
   import { announcedPageStatus } from '$lib/services/app/navigation';
   import { backend } from '$lib/services/backends';
-  import { DEV_SITE_URL, initSiteConfig, siteConfig } from '$lib/services/config';
+  import { cmsConfig, DEV_SITE_URL, initCmsConfig } from '$lib/services/config';
   import { dataLoaded } from '$lib/services/contents';
   import { user } from '$lib/services/user';
   import { initUserEnvDetection } from '$lib/services/user/env';
   import { signInManually } from '$lib/services/user/auth';
 
   /**
-   * @import { SiteConfig } from '$lib/types/public';
+   * @import { CmsConfig } from '$lib/types/public';
    */
 
   /**
    * @typedef {object} Props
-   * @property {SiteConfig} [config] Configuration specified with manual initialization.
+   * @property {CmsConfig} [config] Configuration specified with manual initialization.
    */
 
   /** @type {Props} */
@@ -39,14 +39,14 @@
   });
 
   onMount(() => {
-    initSiteConfig(config);
+    initCmsConfig(config);
   });
 
   onMount(() => {
     initUserEnvDetection();
   });
 
-  const configuredBackendName = $derived(/** @type {string} */ ($siteConfig?.backend?.name));
+  const configuredBackendName = $derived(/** @type {string} */ ($cmsConfig?.backend?.name));
 
   $effect(() => {
     if (!configuredBackendName) {
@@ -80,8 +80,8 @@
 <svelte:head>
   <meta name="referrer" content="same-origin" />
   <meta name="robots" content="noindex" />
-  {#if $siteConfig}
-    {@const logoURL = $siteConfig.logo_url}
+  {#if $cmsConfig}
+    {@const logoURL = $cmsConfig.logo?.src ?? $cmsConfig.logo_url}
     <link
       rel="icon"
       href={logoURL || `data:image/svg+xml;base64,${btoa(SveltiaLogo)}`}
@@ -145,20 +145,24 @@
   @keyframes slide-out-to-right {
     from {
       transform: translateX(0);
+      opacity: 1;
     }
 
     to {
       transform: translateX(100%);
+      opacity: 0;
     }
   }
 
   @keyframes slide-in-from-right {
     from {
       transform: translateX(100%);
+      opacity: 0;
     }
 
     to {
       transform: translateX(0);
+      opacity: 1;
     }
   }
 
@@ -174,11 +178,60 @@
     }
   }
 
+  // RTL-specific keyframes that mirror the depth effect
+  @keyframes slide-out-to-left-rtl {
+    from {
+      transform: translateX(0);
+      opacity: 1;
+    }
+
+    to {
+      transform: translateX(-100%);
+      opacity: 0;
+    }
+  }
+
+  @keyframes slide-out-to-right-rtl {
+    from {
+      transform: translateX(0);
+      filter: brightness(1);
+    }
+
+    to {
+      transform: translateX(20%);
+      filter: brightness(0.5);
+    }
+  }
+
+  @keyframes slide-in-from-right-rtl {
+    from {
+      transform: translateX(20%);
+      filter: brightness(0.5);
+    }
+
+    to {
+      transform: translateX(0);
+      filter: brightness(1);
+    }
+  }
+
+  @keyframes slide-in-from-left-rtl {
+    from {
+      transform: translateX(-100%);
+      opacity: 0;
+    }
+
+    to {
+      transform: translateX(0);
+      opacity: 1;
+    }
+  }
+
   :global {
     html:active-view-transition-type(forwards) {
       &::view-transition-old(page-root) {
         z-index: 999;
-        animation: 100ms ease-out both slide-out-to-left;
+        animation: 100ms ease-in both slide-out-to-left;
 
         @media (prefers-reduced-motion) {
           animation: none;
@@ -187,10 +240,20 @@
 
       &::view-transition-new(page-root) {
         z-index: 1000;
-        animation: 100ms ease-out both slide-in-from-right;
+        animation: 100ms ease-in both slide-in-from-right;
 
         @media (prefers-reduced-motion) {
           animation: none;
+        }
+      }
+
+      &:dir(rtl) {
+        &::view-transition-old(page-root) {
+          animation: 100ms ease-in both slide-out-to-right-rtl;
+        }
+
+        &::view-transition-new(page-root) {
+          animation: 100ms ease-in both slide-in-from-left-rtl;
         }
       }
     }
@@ -198,7 +261,7 @@
     html:active-view-transition-type(backwards) {
       &::view-transition-old(page-root) {
         z-index: 1000;
-        animation: 100ms ease-out both slide-out-to-right;
+        animation: 100ms ease-in both slide-out-to-right;
 
         @media (prefers-reduced-motion) {
           animation: none;
@@ -207,10 +270,20 @@
 
       &::view-transition-new(page-root) {
         z-index: 999;
-        animation: 100ms ease-out both slide-in-from-left;
+        animation: 100ms ease-in both slide-in-from-left;
 
         @media (prefers-reduced-motion) {
           animation: none;
+        }
+      }
+
+      &:dir(rtl) {
+        &::view-transition-old(page-root) {
+          animation: 100ms ease-in both slide-out-to-left-rtl;
+        }
+
+        &::view-transition-new(page-root) {
+          animation: 100ms ease-in both slide-in-from-right-rtl;
         }
       }
     }

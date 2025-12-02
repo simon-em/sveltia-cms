@@ -1,34 +1,33 @@
+import { isFieldMultiple } from '$lib/services/contents/entry/fields';
 import { MULTI_VALUE_WIDGETS } from '$lib/services/contents/widgets';
 
 /**
  * @import {
  * Field,
  * FieldKeyPath,
- * ListField,
- * MultiValueField,
- * ObjectField,
+ * FieldWithSubFields,
+ * FieldWithTypes,
+ * ListFieldWithSubField,
  * } from '$lib/types/public';
  */
 
 /**
  * Parse a field to generate a sorted key path list.
+ * @internal
  * @param {object} args Arguments.
  * @param {Field} args.field Single field.
  * @param {FieldKeyPath} args.keyPath Key path of the field.
  * @param {FieldKeyPath[]} args.keyPathList Key path list.
  */
-const parseField = ({ field, keyPath, keyPathList }) => {
+export const parseField = ({ field, keyPath, keyPathList }) => {
   const { widget } = field;
   const isList = widget === 'list';
 
   keyPathList.push(keyPath);
 
   if (isList || widget === 'object') {
-    const {
-      fields: subFields,
-      types,
-      typeKey = 'type',
-    } = /** @type {ListField | ObjectField} */ (field);
+    const { fields: subFields } = /** @type {FieldWithSubFields} */ (field);
+    const { types, typeKey = 'type' } = /** @type {FieldWithTypes} */ (field);
 
     if (subFields) {
       subFields.forEach((subField) => {
@@ -51,7 +50,7 @@ const parseField = ({ field, keyPath, keyPathList }) => {
         });
       });
     } else if (isList) {
-      const { field: subField } = /** @type {ListField} */ (field);
+      const { field: subField } = /** @type {ListFieldWithSubField} */ (field);
 
       if (subField) {
         parseField({
@@ -63,12 +62,9 @@ const parseField = ({ field, keyPath, keyPathList }) => {
         keyPathList.push(`${keyPath}.*`);
       }
     }
-  }
-
-  if (widget && MULTI_VALUE_WIDGETS.includes(widget)) {
-    const { multiple = false } = /** @type {MultiValueField} */ (field);
-
-    keyPathList.push(multiple ? `${keyPath}.*` : keyPath);
+  } else if (widget && MULTI_VALUE_WIDGETS.includes(widget) && isFieldMultiple(field)) {
+    // Only add wildcard path for multi-value widgets that aren't list/object
+    keyPathList.push(`${keyPath}.*`);
   }
 };
 

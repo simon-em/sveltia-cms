@@ -7,7 +7,7 @@
   import PublishButton from '$lib/components/global/toolbar/items/publish-button.svelte';
   import QuickSearchBar from '$lib/components/global/toolbar/items/quick-search-bar.svelte';
   import { goto } from '$lib/services/app/navigation';
-  import { siteConfig } from '$lib/services/config';
+  import { cmsConfig } from '$lib/services/config';
   import { allEntries } from '$lib/services/contents';
   import { selectedCollection } from '$lib/services/contents/collection';
   import { getEntriesByCollection } from '$lib/services/contents/collection/entries';
@@ -15,8 +15,8 @@
 
   const numberFormatter = $derived(Intl.NumberFormat($appLocale ?? undefined));
   // @ts-ignore Dividers can be included in the collection list
-  const collections = $derived($siteConfig?.collections?.filter(({ hide }) => !hide) ?? []);
-  const singletons = $derived($siteConfig?.singletons ?? []);
+  const collections = $derived($cmsConfig?.collections?.filter(({ hide }) => !hide) ?? []);
+  const singletons = $derived($cmsConfig?.singletons ?? []);
 </script>
 
 <div role="none" class="primary-sidebar">
@@ -38,7 +38,7 @@
         {#each collections as collection, index (collection.name ?? index)}
           {#await sleep() then}
             {#if !('divider' in collection)}
-              {@const { name, label, icon, files } = collection}
+              {@const { name, label, icon } = collection}
               <Option
                 label={label || name}
                 selected={$isSmallScreen ? false : $selectedCollection?.name === name}
@@ -51,7 +51,9 @@
                 {/snippet}
                 {#snippet endIcon()}
                   {#key $allEntries}
-                    {@const count = (files ?? getEntriesByCollection(name)).length}
+                    {@const count = (
+                      'files' in collection ? collection.files : getEntriesByCollection(name)
+                    ).length}
                     <span
                       class="count"
                       aria-label="({$_(

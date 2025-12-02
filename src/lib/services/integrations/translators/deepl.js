@@ -2,7 +2,7 @@
 // @see https://github.com/sveltia/sveltia-cms/issues/437
 
 /**
- * @import { TranslateOptions, TranslationService } from '$lib/types/private';
+ * @import { LanguagePair, TranslationOptions, TranslationService } from '$lib/types/private';
  */
 
 const serviceId = 'deepl';
@@ -94,6 +94,7 @@ const TARGET_LANGUAGES = [
 
 /**
  * Get a supported source language that matches the given locale code.
+ * @internal
  * @param {string} locale Locale code.
  * @returns {string | undefined} Supported language.
  */
@@ -109,6 +110,7 @@ export const getSourceLanguage = (locale) => {
 
 /**
  * Get a supported target language that matches the given locale code.
+ * @internal
  * @param {string} locale Locale code.
  * @returns {string | undefined} Supported language.
  */
@@ -139,10 +141,18 @@ export const getTargetLanguage = (locale) => {
 };
 
 /**
+ * Check whether the given source and target languages are supported.
+ * @param {LanguagePair} languages Language pair.
+ * @returns {Promise<boolean>} True if both source and target languages are supported.
+ */
+export const availability = async ({ sourceLanguage, targetLanguage }) =>
+  !!getSourceLanguage(sourceLanguage) && !!getTargetLanguage(targetLanguage);
+
+/**
  * Translate the given text with DeepL API. Note that the API request uses the GET method, because
  * POST doesn’t work due to a CORS issue. Too long URL params may lead to an HTTP error.
  * @param {string[]} texts Array of original texts.
- * @param {TranslateOptions} options Options.
+ * @param {TranslationOptions} options Options.
  * @returns {Promise<string[]>} Translated strings in the original order.
  * @throws {Error} When the source or target locale is not supported.
  * @see https://developers.deepl.com/docs/api-reference/translate
@@ -150,9 +160,9 @@ export const getTargetLanguage = (locale) => {
  * @todo Implement an error handling.
  * @todo Send multiple requests if there are too many texts.
  */
-const translate = async (texts, { sourceLocale, targetLocale, apiKey }) => {
-  const sourceLanguage = getSourceLanguage(sourceLocale);
-  const targetLanguage = getTargetLanguage(targetLocale);
+const translate = async (texts, { sourceLanguage, targetLanguage, apiKey }) => {
+  sourceLanguage = getSourceLanguage(sourceLanguage) ?? '';
+  targetLanguage = getTargetLanguage(targetLanguage) ?? '';
 
   if (!sourceLanguage) {
     throw new Error('Source locale is not supported.');
@@ -192,7 +202,6 @@ export default {
   apiKeyURL,
   apiKeyPattern,
   markdownSupported: false,
-  getSourceLanguage,
-  getTargetLanguage,
+  availability,
   translate,
 };

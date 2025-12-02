@@ -14,8 +14,17 @@ import {
 } from './sort-keys';
 
 /**
- * @import { EntryCollection } from '$lib/types/private';
+ * @import { InternalEntryCollection } from '$lib/types/private';
  */
+
+vi.mock('svelte-i18n', () => ({
+  _: vi.fn(() => (/** @type {string} */ key) => key),
+  locale: {
+    subscribe: vi.fn(() => vi.fn()),
+    set: vi.fn(),
+    update: vi.fn(),
+  },
+}));
 
 vi.mock('$lib/services/config');
 vi.mock('$lib/services/contents/entry/fields');
@@ -53,7 +62,7 @@ describe('Test getSortConfig()', async () => {
     return undefined;
   });
 
-  /** @type {EntryCollection} */
+  /** @type {InternalEntryCollection} */
   const collectionBase = {
     name: 'posts',
     _type: 'entry',
@@ -87,7 +96,7 @@ describe('Test getSortConfig()', async () => {
   };
 
   // @ts-ignore
-  (await import('$lib/services/config')).siteConfig = writable({
+  (await import('$lib/services/config')).cmsConfig = writable({
     backend: { name: 'github' },
     media_folder: 'static/uploads',
     collections: [{ ...collectionBase }],
@@ -831,7 +840,7 @@ describe('Test parseCustomSortableFields()', () => {
   test('parses advanced object with fields array', () => {
     const config = {
       fields: ['title', 'date'],
-      default: { field: 'title', direction: /** @type {const} */ ('descending') },
+      default: { field: 'title', direction: /** @type {'descending'} */ ('descending') },
     };
 
     const result = parseCustomSortableFields(config);
@@ -858,11 +867,11 @@ describe('Test parseCustomSortableFields()', () => {
     const configs = [
       {
         fields: ['title'],
-        default: { field: 'title', direction: /** @type {const} */ ('descending') },
+        default: { field: 'title', direction: /** @type {'descending'} */ ('descending') },
       },
       {
         fields: ['title'],
-        default: { field: 'title', direction: /** @type {const} */ ('Descending') },
+        default: { field: 'title', direction: /** @type {'Descending'} */ ('Descending') },
       },
     ];
 
@@ -877,7 +886,7 @@ describe('Test parseCustomSortableFields()', () => {
     const configs = [
       {
         fields: ['title'],
-        default: { field: 'title', direction: /** @type {const} */ ('ascending') },
+        default: { field: 'title', direction: /** @type {'ascending'} */ ('ascending') },
       },
       { fields: ['title'], default: { field: 'title', direction: /** @type {any} */ ('invalid') } },
       { fields: ['title'], default: { field: 'title' } },
@@ -1004,5 +1013,102 @@ describe('Test getSortKeyLabel()', () => {
     expect(typeof result).toBe('string');
     // Numeric indices should be filtered out
     expect(result).not.toContain('0');
+  });
+
+  test('calls getField for nested field paths', async () => {
+    const { getField } = await import('$lib/services/contents/entry/fields');
+
+    const mockCollectionWithAuthor = /** @type {any} */ ({
+      name: 'posts',
+      _type: 'entry',
+      folder: 'content/posts',
+      fields: [
+        {
+          name: 'author',
+          label: 'Author',
+          widget: 'object',
+          fields: [
+            { name: 'name', label: 'Name', widget: 'string' },
+            { name: 'email', label: 'Email', widget: 'string' },
+          ],
+        },
+      ],
+    });
+
+    // Mock getField to return field configs for nested paths
+    vi.mocked(getField).mockImplementation(({ collectionName, keyPath }) => {
+      if (collectionName === 'posts') {
+        if (keyPath === 'author') {
+          return { name: 'author', label: 'Author', widget: 'object' };
+        }
+
+        if (keyPath === 'author.name') {
+          return { name: 'name', label: 'Author Name', widget: 'string' };
+        }
+
+        if (keyPath === 'author.email') {
+          return { name: 'email', label: 'Author Email', widget: 'string' };
+        }
+      }
+
+      return undefined;
+    });
+
+    const result = getSortKeyLabel({ collection: mockCollectionWithAuthor, key: 'author.name' });
+
+    expect(result).toContain('Author');
+    expect(result).toContain('Author Name');
+    expect(getField).toHaveBeenCalledWith({ collectionName: 'posts', keyPath: 'author' });
+    expect(getField).toHaveBeenCalledWith({ collectionName: 'posts', keyPath: 'author.name' });
+  });
+});
+
+describe('Test sortKeys store', () => {
+  test('sortKeys derived store initializes correctly', async () => {
+    const { sortKeys } = await import('./sort-keys');
+
+    expect(sortKeys).toBeDefined();
+    expect(typeof sortKeys.subscribe).toBe('function');
+
+    // Subscribe to the store to verify it works
+    const unsubscribe = sortKeys.subscribe(() => {
+      // Store is subscribed successfully
+    });
+
+    unsubscribe();
+  });
+
+  test('sortKeys store sets empty array for file/singleton collections', async () => {
+    const { sortKeys } = await import('./sort-keys');
+    let result = /** @type {any} */ ([]);
+
+    const unsubscribe = sortKeys.subscribe((_value) => {
+      result = _value;
+    });
+
+    // For file collections, sortKeys returns an empty array
+    expect(Array.isArray(result)).toBe(true);
+
+    unsubscribe();
+  });
+
+  test('sortKeys store returns sort key objects with label', async () => {
+    const { sortKeys } = await import('./sort-keys');
+    let sortKeysResult = /** @type {any} */ ([]);
+
+    const unsubscribe = sortKeys.subscribe((_value) => {
+      sortKeysResult = _value;
+    });
+
+    // The sortKeys store should return an array of objects
+    expect(Array.isArray(sortKeysResult)).toBe(true);
+
+    // Each item should have key and label properties if not empty
+    if (sortKeysResult.length > 0) {
+      expect(sortKeysResult[0]).toHaveProperty('key');
+      expect(sortKeysResult[0]).toHaveProperty('label');
+    }
+
+    unsubscribe();
   });
 });

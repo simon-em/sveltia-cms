@@ -1,13 +1,19 @@
 import { exec } from 'child_process';
 import { existsSync } from 'fs';
-import { cp, mkdir, readFile, writeFile } from 'fs/promises';
+import { appendFile, cp, mkdir, readFile, writeFile } from 'fs/promises';
 import path from 'path';
 
 import { svelte } from '@sveltejs/vite-plugin-svelte';
-import { sveltePreprocess } from 'svelte-preprocess';
 import { createGenerator } from 'ts-json-schema-generator';
 import { defineConfig } from 'vite';
 
+import { BUILTIN_WIDGETS } from './src/lib/services/contents/widgets';
+import svelteConfig from './svelte.config';
+
+/**
+ * Path to the generated main type declaration file.
+ */
+const MAIN_TYPE_PATH = 'package/main.d.ts';
 /**
  * Path to the generated public type declaration file.
  */
@@ -81,6 +87,9 @@ const generateTypes = async () => {
     });
   });
 
+  // Export the `CmsConfig` type
+  await appendFile(MAIN_TYPE_PATH, 'export type { CmsConfig };\n');
+
   const publicType = await readFile(PUBLIC_TYPE_PATH, 'utf-8');
 
   // Replace `DEPRECATED:` with proper `@deprecated` tag. This is needed because JSDoc comments
@@ -89,8 +98,8 @@ const generateTypes = async () => {
 };
 
 /**
- * Generate JSON schema for the Sveltia CMS site configuration from TypeScript types. This schema is
- * used to validate the `config.yml` file within VS Code and other tools that support JSON schema
+ * Generate JSON schema for the Sveltia CMS configuration from TypeScript types. This schema is used
+ * to validate the `config.yml` file within VS Code and other tools that support JSON schema
  * validation.
  * @see https://github.com/vega/ts-json-schema-generator
  * @see https://www.schemastore.org/netlify.json - Legacy Netlify CMS config schema
@@ -99,7 +108,7 @@ const generateTypes = async () => {
 const generateSchema = async () => {
   const config = {
     path: PUBLIC_TYPE_PATH,
-    type: 'SiteConfig',
+    type: 'CmsConfig',
     // `markdownDescription` is a VS Code schema extension
     // https://code.visualstudio.com/docs/languages/json#_json-schemas-and-settings
     markdownDescription: true,
@@ -108,24 +117,33 @@ const generateSchema = async () => {
   const schema = {
     ...createGenerator(config).createSchema(config.type),
     title: 'Sveltia CMS Configuration',
-    description: 'Sveltia CMS site configuration file',
+    description: 'Sveltia CMS configuration file',
   };
 
   // Allow having the `$schema` property at the top of the config file
   // https://json-schema.org/understanding-json-schema/keywords
-  schema.definitions.SiteConfig.properties.$schema = { type: 'string', format: 'uri' };
+  schema.definitions.CmsConfig.properties.$schema = { type: 'string', format: 'uri' };
 
-  const schemaString = JSON.stringify(schema, null, 2)
-    // Remove unnecessary line breaks in `markdownDescription` originally present in JSDoc
+  // Require at least one of `collections` or `singletons`
+  schema.definitions.CmsConfig.anyOf = [
+    { required: ['collections'] },
+    { required: ['singletons'] },
+  ];
+
+  // Disallow built-in widget names for custom widgets. We need this because the `Exclude` type
+  // utility used in the TypeScript definition is not converted to JSON schema.
+  // @see https://github.com/vega/ts-json-schema-generator/issues/993
+  Object.assign(schema.definitions.CustomField.properties.widget, {
+    minLength: 1,
+    not: { enum: BUILTIN_WIDGETS },
+  });
+
+  const schemaString = JSON.stringify(schema)
+    // Remove unnecessary escaped line breaks in `markdownDescription` originally present in JSDoc
     .replace(/\\n/g, ' ')
     // Use the proper boolean `deprecated` property instead of a string and append a separate
     // message property. `deprecationMessage` is a VS Code schema extension
-    .replace(
-      /^(?<spaces>\s+)"deprecated": "(?<message>.+)"$/gm,
-      '$<spaces>"deprecated": true,\n$<spaces>"deprecationMessage": "$<message>"',
-    )
-    // Add a newline at the end of the file
-    .concat('\n');
+    .replace(/"deprecated":"(.+?)"/g, '"deprecated":true,"deprecationMessage":"$1"');
 
   await mkdir('package/schema', { recursive: true });
   await writeFile('package/schema/sveltia-cms.json', schemaString);
@@ -158,7 +176,7 @@ export default defineConfig({
     extensions: ['.js', '.svelte'],
   },
   build: {
-    target: 'es2022',
+    target: 'es2024',
     reportCompressedSize: false,
     chunkSizeWarningLimit: 5000,
     sourcemap: true,
@@ -185,11 +203,8 @@ export default defineConfig({
   esbuild: { legalComments: 'eof' },
   plugins: [
     svelte({
+      ...svelteConfig,
       emitCss: false,
-      preprocess: sveltePreprocess(),
-      compilerOptions: {
-        runes: true,
-      },
     }),
     copyPackageFiles(),
     generateExtraFiles(),
@@ -199,5 +214,6 @@ export default defineConfig({
       include: ['src/lib/{components,services}/**/*.js'],
       reporter: ['text'],
     },
+    silent: true,
   },
 });

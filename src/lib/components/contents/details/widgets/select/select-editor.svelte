@@ -1,7 +1,7 @@
 <!--
   @component
   Implement the editor for the Select widget.
-  @see https://decapcms.org/docs/widgets/#select
+  @see https://decapcms.org/docs/widgets/#Select
 -->
 <script>
   import { isObject } from '@sveltia/utils/object';
@@ -47,9 +47,7 @@
     const _options = fieldOptions.map(
       (option) =>
         /** @type {SelectFieldSelectorOption} */ (
-          isObject(option)
-            ? /** @type {{ label: string, value: string }} */ (option)
-            : { label: option, value: option }
+          isObject(option) ? option : { label: option, value: option }
         ),
     );
 

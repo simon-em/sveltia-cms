@@ -4,21 +4,20 @@ import { isURL } from '@sveltia/utils/string';
 import merge from 'deepmerge';
 import { get, writable } from 'svelte/store';
 import { _ } from 'svelte-i18n';
-import YAML from 'yaml';
+import { stringify } from 'yaml';
 
 import { allAssetFolders } from '$lib/services/assets/folders';
-import { gitBackendServices, validBackendNames } from '$lib/services/backends';
-import { warnDeprecation } from '$lib/services/config/deprecations';
 import { getAllAssetFolders } from '$lib/services/config/folders/assets';
 import { getAllEntryFolders } from '$lib/services/config/folders/entries';
-import { fetchSiteConfig } from '$lib/services/config/loader';
+import { fetchCmsConfig } from '$lib/services/config/loader';
+import { parseCmsConfig } from '$lib/services/config/parser';
 import { allEntryFolders } from '$lib/services/contents';
 import { prefs } from '$lib/services/user/prefs';
 
 /**
  * @import { Writable } from 'svelte/store';
- * @import { SiteConfig } from '$lib/types/public'
- * @import { InternalSiteConfig } from '$lib/types/private';
+ * @import { ConfigParserCollectors, InternalCmsConfig } from '$lib/types/private';
+ * @import { CmsConfig } from '$lib/types/public';
  */
 
 const { DEV, VITE_SITE_URL } = import.meta.env;
@@ -32,104 +31,54 @@ const { DEV, VITE_SITE_URL } = import.meta.env;
  * with the dev server’s middleware, or loading the CMS config file may fail due to a CORS error.
  */
 export const DEV_SITE_URL = DEV ? VITE_SITE_URL || 'http://localhost:5174' : undefined;
+
 /**
- * @type {Partial<SiteConfig>}
+ * @type {Partial<CmsConfig>}
  */
-export const rawSiteConfig = {};
+export const rawCmsConfig = {};
+
 /**
- * @type {Writable<InternalSiteConfig | undefined>}
+ * @type {Writable<InternalCmsConfig | undefined>}
  */
-export const siteConfig = writable();
+export const cmsConfig = writable();
+
 /**
  * @type {Writable<string | undefined>}
  */
-export const siteConfigVersion = writable();
-/**
- * @type {Writable<{ message: string } | undefined>}
- */
-export const siteConfigError = writable();
+export const cmsConfigVersion = writable();
 
 /**
- * Validate the site configuration file.
- * @param {SiteConfig} config Raw config object.
- * @throws {Error} If there is an error in the config.
- * @see https://decapcms.org/docs/configuration-options/
- * @todo Add more validations.
+ * @type {Writable<string[]>}
  */
-export const validate = (config) => {
-  if (!Array.isArray(config.collections) && !Array.isArray(config.singletons)) {
-    throw new Error(get(_)('config.error.no_collection'));
-  }
+export const cmsConfigErrors = writable([]);
 
-  if (!config.backend) {
-    throw new Error(get(_)('config.error.missing_backend'));
-  }
-
-  if (!config.backend.name) {
-    throw new Error(get(_)('config.error.missing_backend_name'));
-  }
-
-  if (!validBackendNames.includes(config.backend.name)) {
-    throw new Error(
-      get(_)('config.error.unsupported_backend', { values: { name: config.backend.name } }),
-    );
-  }
-
-  if (Object.keys(gitBackendServices).includes(config.backend.name)) {
-    if (config.backend.repo === undefined) {
-      throw new Error(get(_)('config.error.missing_repository'));
-    }
-
-    if (typeof config.backend.repo !== 'string' || !/(.+)\/([^/]+)$/.test(config.backend.repo)) {
-      throw new Error(get(_)('config.error.invalid_repository'));
-    }
-  }
-
-  if (config.backend.auth_type === 'implicit') {
-    throw new Error(get(_)('config.error.oauth_implicit_flow'));
-  }
-
-  if (config.backend.auth_type === 'pkce' && !config.backend.app_id) {
-    throw new Error(get(_)('config.error.oauth_no_app_id'));
-  }
-
-  // @todo Remove the option prior to the 1.0 release.
-  if (config.backend.automatic_deployments !== undefined) {
-    warnDeprecation('automatic_deployments');
-  }
-
-  if (config.media_folder === undefined) {
-    throw new Error(get(_)('config.error.missing_media_folder'));
-  }
-
-  if (typeof config.media_folder !== 'string') {
-    throw new Error(get(_)('config.error.invalid_media_folder'));
-  }
-
-  if (config.public_folder !== undefined) {
-    if (typeof config.public_folder !== 'string') {
-      throw new Error(get(_)('config.error.invalid_public_folder'));
-    }
-
-    if (/^\.{1,2}\//.test(config.public_folder)) {
-      throw new Error(get(_)('config.error.public_folder_relative_path'));
-    }
-
-    if (/^https?:/.test(config.public_folder)) {
-      throw new Error(get(_)('config.error.public_folder_absolute_url'));
-    }
-  }
+/**
+ * Collectors used during config parsing.
+ * @type {ConfigParserCollectors}
+ */
+const collectors = {
+  errors: new Set(),
+  warnings: new Set(),
+  mediaFields: new Set(),
+  relationFields: new Set(),
 };
 
 /**
- * Initialize the site configuration state by loading the YAML file and optionally merge the object
+ * Initialize the CMS configuration state by loading the YAML file and optionally merge the object
  * with one specified with `CMS.init()`.
- * @param {SiteConfig} [manualConfig] Raw configuration specified with manual initialization.
+ * @param {CmsConfig} [manualConfig] Raw configuration specified with manual initialization.
  * @todo Normalize configuration object.
  */
-export const initSiteConfig = async (manualConfig) => {
-  siteConfig.set(undefined);
-  siteConfigError.set(undefined);
+export const initCmsConfig = async (manualConfig) => {
+  cmsConfig.set(undefined);
+  cmsConfigErrors.set([]);
+
+  Object.assign(collectors, {
+    errors: new Set(),
+    warnings: new Set(),
+    mediaFields: new Set(),
+    relationFields: new Set(),
+  });
 
   try {
     // Not a config error but `getHash` below and some other features require a secure context
@@ -148,18 +97,34 @@ export const initSiteConfig = async (manualConfig) => {
       rawConfig = manualConfig;
 
       if (rawConfig.load_config_file !== false) {
-        rawConfig = merge(await fetchSiteConfig(), rawConfig);
+        rawConfig = merge(await fetchCmsConfig(), rawConfig);
       }
     } else {
-      rawConfig = await fetchSiteConfig();
+      rawConfig = await fetchCmsConfig();
     }
 
     // Store the raw config so it can be used in the parser and config viewer
-    Object.assign(rawSiteConfig, rawConfig);
+    Object.assign(rawCmsConfig, rawConfig);
 
-    validate(rawConfig);
+    parseCmsConfig(rawConfig, collectors);
 
-    /** @type {InternalSiteConfig} */
+    if (collectors.errors.size) {
+      collectors.errors.forEach((warning) => {
+        // eslint-disable-next-line no-console
+        console.error(warning);
+      });
+
+      throw new Error('Errors found in configuration');
+    }
+
+    if (collectors.warnings.size) {
+      collectors.warnings.forEach((warning) => {
+        // eslint-disable-next-line no-console
+        console.warn(warning);
+      });
+    }
+
+    /** @type {InternalCmsConfig} */
     const config = structuredClone(rawConfig);
 
     // Set the site URL for development or production. See also `/src/lib/components/app.svelte`
@@ -173,22 +138,26 @@ export const initSiteConfig = async (manualConfig) => {
       }
     });
 
-    siteConfig.set(config);
-    siteConfigVersion.set(await getHash(YAML.stringify(config)));
+    cmsConfig.set(config);
+    cmsConfigVersion.set(await getHash(stringify(config)));
   } catch (/** @type {any} */ ex) {
-    siteConfigError.set({
-      message: ex.name === 'Error' ? ex.message : get(_)('config.error.unexpected'),
-    });
+    cmsConfigErrors.set(
+      collectors.errors.size
+        ? [...collectors.errors]
+        : [ex.name === 'Error' ? ex.message : get(_)('config.error.unexpected')],
+    );
 
     // eslint-disable-next-line no-console
     console.error(ex, ex.cause);
   }
 };
 
-siteConfig.subscribe((config) => {
+cmsConfig.subscribe((config) => {
   if (get(prefs).devModeEnabled) {
     // eslint-disable-next-line no-console
-    console.info('siteConfig', config);
+    console.info('cmsConfig', config);
+    // eslint-disable-next-line no-console
+    console.info('collectors', collectors);
   }
 
   if (!config) {
@@ -196,7 +165,7 @@ siteConfig.subscribe((config) => {
   }
 
   const _allEntryFolders = getAllEntryFolders(config);
-  const _allAssetFolders = getAllAssetFolders(config);
+  const _allAssetFolders = getAllAssetFolders(config, [...collectors.mediaFields]);
 
   // `getCollection` depends on `allAssetFolders`
   allEntryFolders.set(_allEntryFolders);

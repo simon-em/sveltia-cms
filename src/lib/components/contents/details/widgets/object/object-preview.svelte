@@ -1,7 +1,7 @@
 <!--
   @component
   Implement the preview for the Object widget.
-  @see https://decapcms.org/docs/widgets/#object
+  @see https://decapcms.org/docs/widgets/#Object
 -->
 <script>
   import VisibilityObserver from '$lib/components/common/visibility-observer.svelte';
@@ -11,7 +11,11 @@
 
   /**
    * @import { WidgetPreviewProps } from '$lib/types/private';
-   * @import { ObjectField } from '$lib/types/public';
+   * @import {
+   * ObjectField,
+   * ObjectFieldWithSubFields,
+   * ObjectFieldWithTypes,
+   * } from '$lib/types/public';
    */
 
   /**
@@ -29,12 +33,8 @@
     /* eslint-enable prefer-const */
   } = $props();
 
-  const {
-    // Widget-specific options
-    fields,
-    types,
-    typeKey = 'type',
-  } = $derived(fieldConfig);
+  const { fields } = $derived(/** @type {ObjectFieldWithSubFields} */ (fieldConfig));
+  const { types, typeKey = 'type' } = $derived(/** @type {ObjectFieldWithTypes} */ (fieldConfig));
   const valueMap = $derived($state.snapshot($entryDraft?.currentValues[locale]) ?? {});
   const hasValues = $derived(
     Object.entries(valueMap).some(
@@ -53,9 +53,13 @@
 {#if hasValues}
   <Subsection {label}>
     {#each subFields as subField (subField.name)}
+      {@const subFieldKeyPath = `${keyPath}.${subField.name}`}
       <VisibilityObserver>
         <FieldPreview
-          keyPath={[keyPath, subField.name].join('.')}
+          keyPath={subFieldKeyPath}
+          typedKeyPath={hasVariableTypes && typeConfig?.name
+            ? `${keyPath}<${typeConfig.name}>.${subField.name}`
+            : subFieldKeyPath}
           {locale}
           fieldConfig={subField}
         />

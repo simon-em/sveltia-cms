@@ -2,19 +2,29 @@ import { isObject } from '@sveltia/utils/object';
 import merge from 'deepmerge';
 import { get } from 'svelte/store';
 import { _ } from 'svelte-i18n';
-import YAML from 'yaml';
 
-const SUPPORTED_TYPES = ['text/yaml', 'application/yaml', 'application/json'];
+import { parseTOML, parseYAML } from '$lib/services/contents/file/parse';
+
+/**
+ * Supported MIME types for configuration files.
+ */
+const SUPPORTED_TYPES = [
+  'text/yaml', // legacy
+  'application/yaml', // default
+  'application/toml',
+  'application/json',
+];
 
 /**
  * Fetch a single configuration file.
+ * @internal
  * @param {object} link Link attributes.
  * @param {string} link.href File path.
  * @param {string} [link.type] MIME type.
  * @returns {Promise<object>} Configuration.
  * @throws {Error} When fetching or parsing has failed.
  */
-const fetchFile = async ({ href, type = 'application/yaml' }) => {
+export const fetchFile = async ({ href, type = 'application/yaml' }) => {
   /** @type {Response} */
   let response;
 
@@ -43,9 +53,15 @@ const fetchFile = async ({ href, type = 'application/yaml' }) => {
 
   try {
     if (type === 'application/json') {
-      result = response.json();
+      result = await response.json();
     } else {
-      result = YAML.parse(await response.text(), { merge: true });
+      const text = await response.text();
+
+      if (type === 'application/toml') {
+        result = parseTOML(text);
+      } else {
+        result = parseYAML(text, { merge: true, maxAliasCount: -1 });
+      }
     }
   } catch (ex) {
     throw new Error(get(_)('config.error.parse_failed'), { cause: ex });
@@ -64,6 +80,7 @@ const fetchFile = async ({ href, type = 'application/yaml' }) => {
  * Get the path to the configuration file. Depending on the server or framework configuration, a
  * trailing slash may be removed from the CMS `/admin/` URL. In that case, we need to determine the
  * correct path to the configuration file.
+ * @internal
  * @param {string} path Current `location.pathname` starting with a slash, like `/admin/`, `/admin`,
  * or `/admin/index.html`.
  * @returns {string} Path to the configuration file.
@@ -91,11 +108,11 @@ export const getConfigPath = (path) => {
 };
 
 /**
- * Fetch the YAML/JSON site configuration file(s) and return a parsed, merged object.
+ * Fetch the YAML/JSON CMS configuration file(s) and return a parsed, merged object.
  * @returns {Promise<object>} Configuration.
  * @throws {Error} When fetching or parsing has failed.
  */
-export const fetchSiteConfig = async () => {
+export const fetchCmsConfig = async () => {
   const links = /** @type {HTMLLinkElement[]} */ ([
     ...document.querySelectorAll('link[rel="cms-config-url"]'),
   ]).map(({ href, type }) => /** @type {{ href: string, type?: string }} */ ({ href, type }));

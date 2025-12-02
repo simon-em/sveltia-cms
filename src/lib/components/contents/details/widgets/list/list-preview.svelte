@@ -1,7 +1,7 @@
 <!--
   @component
   Implement the preview for the List widget.
-  @see https://decapcms.org/docs/widgets/#list
+  @see https://decapcms.org/docs/widgets/#List
 -->
 <script>
   import ListPreviewComplex from '$lib/components/contents/details/widgets/list/list-preview-complex.svelte';
@@ -10,7 +10,7 @@
 
   /**
    * @import { WidgetPreviewProps } from '$lib/types/private';
-   * @import { ListField } from '$lib/types/public';
+   * @import { ComplexListField, SimpleListField, ListField } from '$lib/types/public';
    */
 
   /**
@@ -22,12 +22,14 @@
   /** @type {WidgetPreviewProps & Props} */
   let {
     /* eslint-disable prefer-const */
-    ...allProps
+    fieldConfig: config,
+    ...rest
     /* eslint-enable prefer-const */
   } = $props();
-
-  const { hasSubFields } = $derived(getListFieldInfo(allProps.fieldConfig));
-  const Component = $derived(hasSubFields ? ListPreviewComplex : ListPreviewSimple);
 </script>
 
-<Component {...allProps} />
+{#if getListFieldInfo(config).hasSubFields}
+  <ListPreviewComplex {...{ ...rest, fieldConfig: /** @type {ComplexListField} */ (config) }} />
+{:else}
+  <ListPreviewSimple {...{ ...rest, fieldConfig: /** @type {SimpleListField} */ (config) }} />
+{/if}

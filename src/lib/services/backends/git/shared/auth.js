@@ -4,8 +4,16 @@ import { LocalStorage } from '@sveltia/utils/storage';
 import { get, writable } from 'svelte/store';
 import { _ } from 'svelte-i18n';
 
+import { cmsConfig } from '$lib/services/config';
+
 /**
- * @import { AuthTokens } from '$lib/types/private';
+ * @import {
+ * ApiEndpointConfig,
+ * AuthTokens,
+ * InternalCmsConfig,
+ * SignInOptions,
+ * } from '$lib/types/private';
+ * @import { GitBackend } from '$lib/types/public';
  */
 
 export const inAuthPopup = writable(false);
@@ -347,4 +355,73 @@ export const handleClientSideAuthPopup = async ({ backendName, clientId, tokenUR
       window.location.href = realAuthURL;
     }
   }
+};
+
+/**
+ * Handle the authentication flow for a Git service provider. This function decides whether to
+ * initiate a client-side or server-side authentication flow based on the configured backend name
+ * and authentication type.
+ * @internal
+ * @param {object} args Arguments.
+ * @param {boolean} args.auto Whether the sign-in process is automatic.
+ * @param {ApiEndpointConfig} args.apiConfig API endpoint configuration.
+ * @returns {Promise<AuthTokens | undefined>} Auth access token and refresh token, or `undefined` if
+ * the sign-in process is automatic or the flow is being done in a popup window.
+ */
+export const handleAuthFlow = async ({ auto, apiConfig }) => {
+  const { backend } = /** @type {InternalCmsConfig} */ (get(cmsConfig));
+
+  const {
+    name: backendName,
+    site_domain: siteDomain,
+    // @ts-ignore Gitea backend doesn’t have the property
+    auth_type: authType,
+  } = /** @type {GitBackend} */ (backend);
+
+  const { clientId, authScope, authURL, tokenURL } = apiConfig;
+  const authArgs = { backendName, authURL, scope: authScope };
+
+  // Gitea/Forgejo backend only supports PKCE at this time
+  if (backendName === 'gitea' || authType === 'pkce') {
+    const inPopup = window.opener?.origin === window.location.origin && window.name === 'auth';
+
+    if (inPopup) {
+      // We are in the auth popup window; let’s get the OAuth flow done
+      await handleClientSideAuthPopup({ backendName, clientId, tokenURL });
+    }
+
+    if (inPopup || auto) {
+      return undefined;
+    }
+
+    return initClientSideAuth({ ...authArgs, clientId });
+  }
+
+  if (auto) {
+    return undefined;
+  }
+
+  return initServerSideAuth({ ...authArgs, siteDomain });
+};
+
+/**
+ * Get OAuth tokens by handling the authentication flow if necessary.
+ * @param {object} args Arguments.
+ * @param {SignInOptions} args.options Options.
+ * @param {ApiEndpointConfig} args.apiConfig API endpoint configuration.
+ * @returns {Promise<AuthTokens | undefined>} Auth access token and refresh token, or `undefined` if
+ * the sign-in process is automatic or the flow is being done in a popup window.
+ */
+export const getTokens = async ({ options: { token, refreshToken, auto = false }, apiConfig }) => {
+  if (!token) {
+    const result = await handleAuthFlow({ auto, apiConfig });
+
+    if (!result) {
+      return undefined;
+    }
+
+    ({ token, refreshToken } = result);
+  }
+
+  return { token, refreshToken };
 };

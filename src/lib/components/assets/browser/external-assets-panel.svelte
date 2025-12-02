@@ -5,50 +5,59 @@
 -->
 <script>
   import {
+    Alert,
     Button,
     EmptyState,
     InfiniteScroll,
-    Option,
     PasswordInput,
     TextInput,
+    Toast,
   } from '@sveltia/ui';
   import { sleep } from '@sveltia/utils/misc';
-  import DOMPurify from 'isomorphic-dompurify';
-  import { onMount } from 'svelte';
+  import { sanitize } from 'isomorphic-dompurify';
+  import { onMount, untrack } from 'svelte';
   import { _ } from 'svelte-i18n';
 
+  import SimpleImageGridItem from '$lib/components/assets/browser/simple-image-grid-item.svelte';
   import SimpleImageGrid from '$lib/components/assets/browser/simple-image-grid.svelte';
   import AssetPreview from '$lib/components/assets/shared/asset-preview.svelte';
+  import DropZone from '$lib/components/assets/shared/drop-zone.svelte';
   import { selectAssetsView } from '$lib/services/contents/editor';
   import { isSmallScreen } from '$lib/services/user/env';
   import { prefs } from '$lib/services/user/prefs';
 
   /**
    * @import {
-   * AssetKind,
    * ExternalAsset,
+   * MediaLibraryAssetKind,
+   * MediaLibraryFetchOptions,
    * MediaLibraryService,
    * SelectedResource,
    * } from '$lib/types/private';
+   * @import { MediaField } from '$lib/types/public';
    */
 
   /**
    * @typedef {object} Props
-   * @property {AssetKind} [kind] Asset kind.
+   * @property {MediaField} [fieldConfig] File/Image field configuration.
+   * @property {MediaLibraryAssetKind} [kind] Asset kind.
+   * @property {boolean} [multiple] Whether to allow selecting multiple assets.
    * @property {string} [searchTerms] Search terms for filtering assets.
    * @property {MediaLibraryService} serviceProps Media library service details.
    * @property {string} [gridId] The `id` attribute of the inner listbox.
-   * @property {(resource: SelectedResource) => void} [onSelect] Custom `Select` event handler.
+   * @property {SelectedResource[]} selectedResources Selected resources.
    */
 
   /** @type {Props} */
   let {
     /* eslint-disable prefer-const */
     kind = 'image',
+    fieldConfig = undefined,
+    multiple = false,
     searchTerms = '',
     serviceProps,
     gridId = undefined,
-    onSelect = undefined,
+    selectedResources = $bindable([]),
     /* eslint-enable prefer-const */
   } = $props();
 
@@ -63,8 +72,12 @@
     apiKeyPattern,
     init,
     signIn,
+    list,
     search,
+    upload,
   } = $derived(serviceProps);
+
+  const viewType = $derived($selectAssetsView?.type);
 
   const input = $state({ userName: '', password: '' });
   let hasConfig = $state(true);
@@ -75,21 +88,28 @@
   /** @type {'initial' | 'requested' | 'success' | 'error'} */
   let authState = $state('initial');
   /** @type {ExternalAsset[] | null} */
-  let searchResults = $state(null);
+  let listedAssets = $state(null);
   /** @type {string | undefined} */
   let error = $state();
+  /** @type {{ show: boolean, status: 'info' | 'error', length: number }} */
+  let uploadingToast = $state({ show: false, status: 'info', length: 0 });
+
+  /** @type {MediaLibraryFetchOptions} */
+  const listFetchOptions = $derived({ kind, fieldConfig, apiKey, userName, password });
 
   let debounceTimer = 0;
 
   /**
-   * Search assets.
+   * Search or list assets from the external media library.
    * @param {string} [query] Search query.
    */
-  const searchAssets = async (query = '') => {
-    searchResults = null;
+  const getAssets = async (query = '') => {
+    listedAssets = null;
+    query = query.trim();
 
     try {
-      searchResults = await search(query, { kind, apiKey, userName, password });
+      listedAssets =
+        (await (query ? search?.(query, listFetchOptions) : list?.(listFetchOptions))) ?? [];
     } catch (ex) {
       error = 'search_fetch_failed';
       // eslint-disable-next-line no-console
@@ -98,22 +118,40 @@
   };
 
   /**
-   * Download the selected asset, if needed, and notify the file and credit. If hotlinking is
-   * required by the service, just notify the URL instead of downloading the file.
-   * @param {ExternalAsset} asset Selected asset.
-   * @todo Support video files.
+   * Handle `Drop` event to upload files.
+   * @param {File[]} files Dropped files.
    */
-  const selectAsset = async (asset) => {
-    const { downloadURL, fileName, credit } = asset;
-
-    if (hotlinking) {
-      onSelect?.({ url: downloadURL, credit });
-
+  export const uploadFiles = async (files) => {
+    if (!upload) {
       return;
     }
 
+    uploadingToast = { show: true, status: 'info', length: files.length };
+
     try {
-      const response = await fetch(downloadURL);
+      await upload(files, listFetchOptions);
+      getAssets();
+    } catch {
+      uploadingToast = { show: true, status: 'error', length: files.length };
+    }
+  };
+
+  /**
+   * Download the selected asset, if needed, and return the file and credit. If hotlinking is
+   * required by the service, just return the URL instead of downloading the file.
+   * @param {ExternalAsset} asset Selected asset.
+   * @returns {Promise<SelectedResource | undefined>} The selected resource with the file or URL.
+   * @todo Support video files.
+   */
+  const getResource = async (asset) => {
+    const { downloadURL: url, fileName, credit } = asset;
+
+    if (hotlinking) {
+      return { url, credit };
+    }
+
+    try {
+      const response = await fetch(url);
       const { ok, status } = response;
 
       if (!ok) {
@@ -123,11 +161,39 @@
       const blob = await response.blob();
       const file = new File([blob], fileName, { type: blob.type });
 
-      onSelect?.({ file, credit });
+      return { url, credit, file };
     } catch (ex) {
       error = 'image_fetch_failed';
       // eslint-disable-next-line no-console
       console.error(ex);
+    }
+
+    return undefined;
+  };
+
+  /**
+   * Check if the given asset is already selected.
+   * @param {ExternalAsset} asset The asset to check.
+   * @returns {boolean} `true` if the asset is selected, `false` otherwise.
+   */
+  const isSelected = (asset) => selectedResources.some((r) => r.url === asset.downloadURL);
+
+  /**
+   * Handle selection change of an asset.
+   * @param {ExternalAsset} asset The asset whose selection changed.
+   * @param {boolean} selected `true` if the asset is now selected, `false` otherwise.
+   */
+  const onSelectionChange = async (asset, selected) => {
+    const otherResources = selectedResources.filter((r) => r.url !== asset.downloadURL);
+
+    if (selected) {
+      const resource = await getResource(asset);
+
+      if (resource) {
+        selectedResources = [...otherResources, resource];
+      }
+    } else {
+      selectedResources = otherResources;
     }
   };
 
@@ -145,73 +211,75 @@
       apiKey = $prefs.apiKeys?.[serviceId] ?? '';
       [userName, password] = ($prefs.logins?.[serviceId] ?? '').split(' ');
       hasAuthInfo = !!apiKey || !!password;
-      searchResults = null;
-
-      if (hasAuthInfo) {
-        searchAssets();
-      }
+      listedAssets = null;
     })();
   });
 
   $effect(() => {
-    void [searchTerms];
-    window.clearTimeout(debounceTimer);
-    debounceTimer = window.setTimeout(() => {
-      if (hasAuthInfo) {
-        searchAssets(searchTerms);
-      }
-    }, 1000);
+    void [searchTerms, hasAuthInfo];
+
+    untrack(() => {
+      window.clearTimeout(debounceTimer);
+      debounceTimer = window.setTimeout(() => {
+        if (hasAuthInfo) {
+          getAssets(searchTerms);
+        }
+      }, 1000);
+    });
   });
 </script>
+
+{#snippet imageGrid()}
+  <SimpleImageGrid {viewType} {gridId} {multiple}>
+    <InfiniteScroll items={listedAssets ?? []} itemKey="id">
+      {#snippet renderItem(/** @type {ExternalAsset} */ asset)}
+        {#await sleep() then}
+          {@const { id, previewURL, description, kind: _kind } = asset}
+          <SimpleImageGridItem
+            value={id}
+            {viewType}
+            {multiple}
+            selected={isSelected(asset)}
+            onChange={({ detail: { selected } }) => {
+              onSelectionChange(asset, selected);
+            }}
+          >
+            <AssetPreview kind={_kind} src={previewURL} variant="tile" crossorigin="anonymous" />
+            {#if !$isSmallScreen || viewType === 'list'}
+              <span role="none" class="name">{description}</span>
+            {/if}
+          </SimpleImageGridItem>
+        {/await}
+      {/snippet}
+    </InfiniteScroll>
+  </SimpleImageGrid>
+{/snippet}
 
 {#if hasAuthInfo}
   {#if error}
     <EmptyState>
       <span role="alert">{$_(`assets_dialog.error.${error}`)}</span>
     </EmptyState>
-  {:else if !searchResults}
+  {:else if !listedAssets}
     <EmptyState>
       <span role="alert">{$_('searching')}</span>
     </EmptyState>
-  {:else if !searchResults.length}
+  {:else if !listedAssets.length}
     <EmptyState>
       <span role="alert">{$_('no_files_found')}</span>
     </EmptyState>
+  {:else if upload}
+    <DropZone accept={fieldConfig?.accept} {multiple} onDrop={({ files }) => uploadFiles(files)}>
+      {@render imageGrid()}
+    </DropZone>
   {:else}
-    <SimpleImageGrid
-      {gridId}
-      viewType={$selectAssetsView?.type}
-      onChange={({ value }) => {
-        const asset = searchResults?.find(({ id }) => id === value);
-
-        if (asset) {
-          selectAsset(asset);
-        }
-      }}
-    >
-      <InfiniteScroll items={searchResults} itemKey="id">
-        {#snippet renderItem(/** @type {ExternalAsset} */ asset)}
-          {#await sleep() then}
-            {@const { id, previewURL, description, kind: _kind } = asset}
-            <Option label="" value={id}>
-              {#snippet checkIcon()}
-                <!-- Remove check icon -->
-              {/snippet}
-              <AssetPreview kind={_kind} src={previewURL} variant="tile" crossorigin="anonymous" />
-              {#if !$isSmallScreen || $selectAssetsView?.type === 'list'}
-                <span role="none" class="name">{description}</span>
-              {/if}
-            </Option>
-          {/await}
-        {/snippet}
-      </InfiniteScroll>
-    </SimpleImageGrid>
+    {@render imageGrid()}
   {/if}
 {:else if hasConfig}
   <EmptyState>
     <p role="alert">
       {#if serviceType === 'stock_assets'}
-        {@html DOMPurify.sanitize(
+        {@html sanitize(
           $_('prefs.media.stock_photos.description', {
             values: {
               service: serviceLabel,
@@ -223,11 +291,11 @@
         )}
       {/if}
       {#if serviceType === 'cloud_storage'}
-        {@html DOMPurify.sanitize(
-          $_(`cloud_storage.auth.${authState}`, {
-            values: {
-              service: serviceLabel,
-            },
+        {@html sanitize(
+          $_(`cloud_storage.${serviceId}.auth.${authState}`, {
+            default: $_(`cloud_storage.auth.${authType}.${authState}`, {
+              values: { service: serviceLabel },
+            }),
           }),
           { ALLOWED_TAGS: ['a'], ALLOWED_ATTR: ['href', 'target', 'rel'] },
         )}
@@ -250,7 +318,7 @@
               hasAuthInfo = true;
               $prefs.apiKeys ??= {};
               $prefs.apiKeys[serviceId] = apiKey;
-              searchAssets();
+              getAssets();
             }
           }}
         />
@@ -290,7 +358,7 @@
               hasAuthInfo = true;
               $prefs.logins ??= {};
               $prefs.logins[serviceId] = [userName, password].join(' ');
-              searchAssets();
+              getAssets();
             } else {
               authState = 'error';
             }
@@ -304,6 +372,21 @@
     <span role="alert">{$_('cloud_storage.invalid')}</span>
   </EmptyState>
 {/if}
+
+<Toast bind:show={uploadingToast.show}>
+  <Alert status={uploadingToast.status}>
+    {#if uploadingToast.status === 'info'}
+      {$_(uploadingToast.length === 1 ? 'uploading_file_progress' : 'uploading_files_progress', {
+        values: { count: uploadingToast.length },
+      })}
+    {/if}
+    {#if uploadingToast.status === 'error'}
+      {$_(uploadingToast.length === 1 ? 'uploading_file_failed' : 'uploading_files_failed', {
+        values: { count: uploadingToast.length },
+      })}
+    {/if}
+  </Alert>
+</Toast>
 
 <style lang="scss">
   p {

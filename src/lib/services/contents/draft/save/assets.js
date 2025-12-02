@@ -15,11 +15,11 @@ import {
  * @import {
  * Asset,
  * AssetFolderInfo,
- * EntryCollection,
  * EntryDraft,
  * FileChange,
  * FillTemplateOptions,
  * FlattenedEntryContent,
+ * InternalEntryCollection,
  * } from '$lib/types/private';
  * @import { FieldKeyPath } from '$lib/types/public';
  */
@@ -48,7 +48,7 @@ import {
  * @returns {ResolvedAssetFolderPaths} Determined paths.
  */
 export const resolveAssetFolderPaths = ({ folder, fillSlugOptions }) => {
-  const { entryRelative, internalPath, publicPath } = folder;
+  const { entryRelative, internalPath, internalSubPath, publicPath } = folder;
 
   if (internalPath === undefined || publicPath === undefined) {
     // This shouldn’t happen, but avoids type errors in the following code
@@ -70,7 +70,7 @@ export const resolveAssetFolderPaths = ({ folder, fillSlugOptions }) => {
 
   const subPath =
     collection._type === 'entry'
-      ? /** @type {EntryCollection} */ (collection)._file.subPath
+      ? /** @type {InternalEntryCollection} */ (collection)._file.subPath
       : undefined;
 
   const subPathFirstPart = subPath?.match(/(?<path>.+?)(?:\/[^/]+)?$/)?.groups?.path ?? '';
@@ -80,7 +80,7 @@ export const resolveAssetFolderPaths = ({ folder, fillSlugOptions }) => {
       createPath([
         internalPath,
         isMultiFolders || subPath?.includes('/') ? subPathFirstPart : undefined,
-        collection.media_folder, // subfolder, e.g. `images`
+        internalSubPath, // subfolder, e.g. `images`
       ]),
       fillSlugOptions,
     ),
@@ -112,6 +112,7 @@ export const resolveAssetFolderPaths = ({ folder, fillSlugOptions }) => {
 
 /**
  * Get the information required to save an asset.
+ * @internal
  * @param {object} args Arguments.
  * @param {EntryDraft} args.draft Entry draft.
  * @param {string} args.defaultLocaleSlug Default locale’s entry slug.
@@ -119,7 +120,7 @@ export const resolveAssetFolderPaths = ({ folder, fillSlugOptions }) => {
  * @returns {{ assetFolderPaths: ResolvedAssetFolderPaths, assetNamesInSameFolder: string[],
  * savingAssetProps: SavingAsset }} Arguments.
  */
-const getAssetSavingInfo = ({ draft, defaultLocaleSlug, folder }) => {
+export const getAssetSavingInfo = ({ draft, defaultLocaleSlug, folder }) => {
   const { collection, collectionName, collectionFile, isIndexFile } = draft;
 
   const {

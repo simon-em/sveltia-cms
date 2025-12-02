@@ -1,7 +1,6 @@
 /**
  * @import { TextEditorBlockType, TextEditorInlineType, TextEditorMode } from '@sveltia/ui';
  * @import {
- * EditorComponentDefinition,
  * RichTextEditorButtonName,
  * RichTextEditorComponentName,
  * RichTextEditorMode,
@@ -36,6 +35,7 @@ export const NODE_NAME_MAP = {
 export const DEFAULT_BUTTONS = [
   'bold',
   'italic',
+  'strikethrough',
   'code',
   'link',
   'heading-one',
@@ -57,6 +57,7 @@ export const DEFAULT_BUTTONS = [
 export const BUTTON_NAME_MAP = {
   bold: 'bold',
   italic: 'italic',
+  strikethrough: 'strikethrough',
   code: 'code',
   link: 'link',
   'heading-one': 'heading-1',

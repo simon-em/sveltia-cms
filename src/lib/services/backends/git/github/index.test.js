@@ -9,6 +9,8 @@ import {
   DEFAULT_API_ROOT,
   DEFAULT_AUTH_PATH,
   DEFAULT_AUTH_ROOT,
+  DEFAULT_PKCE_AUTH_PATH,
+  DEFAULT_PKCE_AUTH_ROOT,
 } from '$lib/services/backends/git/github/constants';
 import { repository } from '$lib/services/backends/git/github/repository';
 import { apiConfig, graphqlVars } from '$lib/services/backends/git/shared/api';
@@ -20,7 +22,7 @@ vi.mock('svelte/store', () => ({
   derived: vi.fn(() => ({ subscribe: vi.fn() })),
 }));
 vi.mock('$lib/services/config', () => ({
-  siteConfig: { subscribe: vi.fn() },
+  cmsConfig: { subscribe: vi.fn() },
 }));
 vi.mock('$lib/services/user/prefs', () => ({
   prefs: { subscribe: vi.fn() },
@@ -89,7 +91,7 @@ describe('GitHub backend service', () => {
   });
 
   describe('init', () => {
-    test('returns undefined when siteConfig is undefined', () => {
+    test('returns undefined when cmsConfig is undefined', () => {
       vi.mocked(get).mockReturnValue(undefined);
 
       const result = init();
@@ -106,7 +108,7 @@ describe('GitHub backend service', () => {
     });
 
     test('initializes with default configuration', () => {
-      const mockSiteConfig = {
+      const mockCmsConfig = {
         backend: {
           name: BACKEND_NAME,
           repo: 'owner/repo',
@@ -116,7 +118,7 @@ describe('GitHub backend service', () => {
 
       const mockPrefs = { devModeEnabled: false };
 
-      vi.mocked(get).mockReturnValueOnce(mockSiteConfig).mockReturnValueOnce(mockPrefs);
+      vi.mocked(get).mockReturnValueOnce(mockCmsConfig).mockReturnValueOnce(mockPrefs);
 
       const result = init();
 
@@ -163,7 +165,7 @@ describe('GitHub backend service', () => {
       const customApiRoot = 'https://github.example.com/api/v3';
       const customGraphqlRoot = 'https://github.example.com/api/graphql';
 
-      const mockSiteConfig = {
+      const mockCmsConfig = {
         backend: {
           name: BACKEND_NAME,
           repo: 'owner/repo',
@@ -177,7 +179,7 @@ describe('GitHub backend service', () => {
 
       const mockPrefs = { devModeEnabled: false };
 
-      vi.mocked(get).mockReturnValueOnce(mockSiteConfig).mockReturnValueOnce(mockPrefs);
+      vi.mocked(get).mockReturnValueOnce(mockCmsConfig).mockReturnValueOnce(mockPrefs);
 
       const result = init();
 
@@ -212,10 +214,72 @@ describe('GitHub backend service', () => {
       expect(result).toBe(repository);
     });
 
+    test('initializes with PKCE authentication type', () => {
+      const mockCmsConfig = {
+        backend: {
+          name: BACKEND_NAME,
+          repo: 'owner/repo',
+          branch: 'main',
+          auth_type: 'pkce',
+        },
+      };
+
+      const mockPrefs = { devModeEnabled: false };
+
+      vi.mocked(get).mockReturnValueOnce(mockCmsConfig).mockReturnValueOnce(mockPrefs);
+
+      const result = init();
+      const expectedAuthURL = `${DEFAULT_PKCE_AUTH_ROOT}/${DEFAULT_PKCE_AUTH_PATH}`;
+
+      expect(Object.assign).toHaveBeenCalledWith(
+        apiConfig,
+        expect.objectContaining({
+          clientId: '',
+          authURL: expectedAuthURL,
+          tokenURL: expectedAuthURL.replace('/authorize', '/access_token'),
+          restBaseURL: DEFAULT_API_ROOT,
+          graphqlBaseURL: `${DEFAULT_API_ROOT}/graphql`,
+        }),
+      );
+
+      expect(result).toBe(repository);
+    });
+
+    test('initializes with default auth type when not specified', () => {
+      const mockCmsConfig = {
+        backend: {
+          name: BACKEND_NAME,
+          repo: 'owner/repo',
+          branch: 'main',
+          auth_type: '',
+        },
+      };
+
+      const mockPrefs = { devModeEnabled: false };
+
+      vi.mocked(get).mockReturnValueOnce(mockCmsConfig).mockReturnValueOnce(mockPrefs);
+
+      const result = init();
+      const expectedAuthURL = `${DEFAULT_AUTH_ROOT}/${DEFAULT_AUTH_PATH}`;
+
+      expect(Object.assign).toHaveBeenCalledWith(
+        apiConfig,
+        expect.objectContaining({
+          clientId: '',
+          authURL: expectedAuthURL,
+          tokenURL: expectedAuthURL.replace('/authorize', '/access_token'),
+          restBaseURL: DEFAULT_API_ROOT,
+          graphqlBaseURL: `${DEFAULT_API_ROOT}/graphql`,
+        }),
+      );
+
+      expect(result).toBe(repository);
+    });
+
     test('logs repository info in dev mode', () => {
       const consoleSpy = vi.spyOn(console, 'info').mockImplementation(() => {});
 
-      const mockSiteConfig = {
+      const mockCmsConfig = {
         backend: {
           name: BACKEND_NAME,
           repo: 'owner/repo',
@@ -225,7 +289,7 @@ describe('GitHub backend service', () => {
 
       const mockPrefs = { devModeEnabled: true };
 
-      vi.mocked(get).mockReturnValueOnce(mockSiteConfig).mockReturnValueOnce(mockPrefs);
+      vi.mocked(get).mockReturnValueOnce(mockCmsConfig).mockReturnValueOnce(mockPrefs);
 
       init();
 
@@ -235,7 +299,7 @@ describe('GitHub backend service', () => {
     });
 
     test('handles repository path with trailing slash', () => {
-      const mockSiteConfig = {
+      const mockCmsConfig = {
         backend: {
           name: BACKEND_NAME,
           repo: 'owner/repo/',
@@ -245,7 +309,7 @@ describe('GitHub backend service', () => {
 
       const mockPrefs = { devModeEnabled: false };
 
-      vi.mocked(get).mockReturnValueOnce(mockSiteConfig).mockReturnValueOnce(mockPrefs);
+      vi.mocked(get).mockReturnValueOnce(mockCmsConfig).mockReturnValueOnce(mockPrefs);
 
       init();
 

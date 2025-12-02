@@ -27,7 +27,7 @@ export const parseGroupConfig = (filters) => {
   }
 
   if (isObject(filters)) {
-    const { groups: options, default: defaultGroupName } = /** @type {ViewGroups} */ (filters);
+    const { groups: options, default: defaultGroupName } = filters;
 
     if (Array.isArray(options)) {
       const defaultGroup = defaultGroupName
@@ -104,18 +104,20 @@ export const groupEntries = (entries, collection, conditions) => {
 };
 
 /**
- * View groups for the selected entry collection.
- * @type {import('svelte/store').Readable<ViewGroup[]>}
+ * Initialize view groups for the given collection.
+ * @internal
+ * @param {InternalCollection | undefined} collection Collection to initialize groups for.
+ * @param {(value: ViewGroup[]) => void} set Function to set the groups.
  */
-export const viewGroups = derived([selectedCollection], ([_collection], set) => {
-  // Disable sorting for file/singleton collection
-  if (!_collection?.folder) {
+export const initializeViewGroups = (collection, set) => {
+  // Disable grouping for file/singleton collection
+  if (!collection || !('folder' in collection)) {
     set([]);
 
     return;
   }
 
-  const { options, default: defaultGroup } = parseGroupConfig(_collection.view_groups);
+  const { options, default: defaultGroup } = parseGroupConfig(collection.view_groups);
 
   set(options);
 
@@ -123,4 +125,12 @@ export const viewGroups = derived([selectedCollection], ([_collection], set) => 
     ..._view,
     group: _view.group === undefined ? defaultGroup : _view.group,
   }));
+};
+
+/**
+ * View groups for the selected entry collection.
+ * @type {import('svelte/store').Readable<ViewGroup[]>}
+ */
+export const viewGroups = derived([selectedCollection], ([collection], set) => {
+  initializeViewGroups(collection, set);
 });

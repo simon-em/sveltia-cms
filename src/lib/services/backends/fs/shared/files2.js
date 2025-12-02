@@ -2,22 +2,21 @@
 /* eslint-disable no-continue */
 /* eslint-disable no-restricted-syntax */
 
-import { unique } from '@sveltia/utils/array';
 import { getPathInfo, readAsText } from '@sveltia/utils/file';
 import { stripSlashes } from '@sveltia/utils/string';
-import { get } from 'svelte/store';
 
 import { allAssets } from '$lib/services/assets';
-import { allAssetFolders } from '$lib/services/assets/folders';
-import { parseAssetFiles } from '$lib/services/assets/parser';
 import { GIT_CONFIG_FILE_REGEX, gitConfigFiles } from '$lib/services/backends/git/shared/config';
 import { createFileList } from '$lib/services/backends/process';
-import { allEntries, allEntryFolders, dataLoaded, entryParseErrors } from '$lib/services/contents';
+import { allEntries, dataLoaded, entryParseErrors } from '$lib/services/contents';
 import { prepareEntries } from '$lib/services/contents/file/process';
 import { createPathRegEx, getBlob, getGitHash } from '$lib/services/utils/file';
+import { getAssetKind } from '$lib/services/assets/kinds';
 
 /**
  * @import {
+Asset,
+BaseAssetListItem,
  * BaseFileListItem,
  * BaseFileListItemProps,
  * CommitResults,
@@ -175,37 +174,29 @@ const normalizeFileListItem = async ({ file, path }) => {
 };
 
 /**
- * Retrieve all files under the static directory.
- * @param {FileSystemDirectoryHandle} rootDirHandle Root directory handle.
- * @returns {Promise<BaseFileListItemProps[]>} File list.
+ * Parse asset file info to create a complete asset object.
+ * @internal
+ * @param {BaseAssetListItem} fileInfo Asset file info.
+ * @returns {Promise<Asset>} Asset object.
  */
-const getAllFiles = async (rootDirHandle) => {
-  /** @type {FileListItem[]} */
-  const fileList = [];
+export const parseAssetFileInfo = async (fileInfo) => {
+  const { name, handle } = fileInfo;
+  const kind = getAssetKind(name);
 
-  /** @type {string[]} */
-  const scanningPaths = unique(
-    [
-      ...get(allEntryFolders)
-        .map(({ filePathMap, folderPathMap }) =>
-          filePathMap ? Object.values(filePathMap) : Object.values(folderPathMap ?? {}),
-        )
-        .flat(1),
-      ...get(allAssetFolders)
-        .filter(({ internalPath }) => internalPath !== undefined)
-        .map(({ internalPath }) => internalPath),
-    ].map((path) => stripSlashes(path ?? '')),
-  );
+  try {
+    const file = await /** @type {FileSystemFileHandle} */ (handle).getFile();
+    const { size } = file;
+    const sha = await getGitHash(file);
 
-  await scanDir(rootDirHandle, {
-    rootDirHandle,
-    scanningPaths,
-    scanningPathsRegEx: scanningPaths.map(getPathRegex),
-    fileList,
-  });
+    return { ...fileInfo, kind, size, sha };
+  } catch (ex) {
+    // eslint-disable-next-line no-console
+    console.error(ex);
 
-  return Promise.all(fileList.map(normalizeFileListItem));
+    return { ...fileInfo, kind };
+  }
 };
+
 
 /**
  * Read text content from a file and store it in the entry file object.
@@ -227,30 +218,6 @@ const readTextFile = async (entryFile) => {
     console.error(ex);
   }
 };
-
-/**
- * Load file list and all the entry files from the file system, then cache them in the
- * {@link allEntries} and {@link allAssets} stores.
- * @param {FileSystemDirectoryHandle} rootDirHandle Root directory handle.
- */
-
-function dataURLToBlob(dataURL) {
-  // Split the dataURL into the header and the data
-  const [header, base64Data] = dataURL.split(',');
-
-  // Get the MIME type from the header
-  const mime = header.match(/:(.*?);/)[1];
-
-  // Decode the base64 string to binary
-  const binary = atob(base64Data);
-  const array = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) {
-    array[i] = binary.charCodeAt(i);
-  }
-
-  // Create a Blob from the typed array
-  return new Blob([array], { type: mime });
-}
 
 export const loadFiles = async (rootDirHandle) => {
   //const files = await getAllFiles(rootDirHandle);
@@ -287,8 +254,14 @@ export const loadFiles = async (rootDirHandle) => {
 
   const { entries, errors } = await prepareEntries(entryFiles);
 
+  const assets = [];
+
+  for (const fileInfo of assetFiles) {
+    assets.push(await parseAssetFileInfo(fileInfo));
+  }
+
   allEntries.set(entries);
-  allAssets.set(parseAssetFiles(assetFiles));
+  allAssets.set(assets);
   gitConfigFiles.set(configFiles);
   entryParseErrors.set(errors);
   dataLoaded.set(true);
@@ -369,28 +342,7 @@ const apiAll = async () => {
   return data.entries;
 };
 
-/**
- * Write data to a file at the specified path.
- * @param {object} args Arguments.
- * @param {FileSystemDirectoryHandle} args.rootDirHandle Root directory handle.
- * @param {FileSystemFileHandle} [args.fileHandle] File handle to write to. Provided if the file has
- * been moved.
- * @param {string} args.path The relative path to the file within the root directory.
- * @param {string | File} args.data The data to write to the file.
- * @returns {Promise<File>} Written file.
- */
 
-function fileToBase64(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-
-    reader.onload = () => resolve(reader.result); // just Base64
-    //reader.onload = () => resolve(reader.result.split(',')[1]); // just Base64
-    reader.onerror = (error) => reject(error);
-
-    reader.readAsDataURL(file); // reads file and encodes as Base64 Data URL
-  });
-}
 
 const writeFile = async ({ rootDirHandle, fileHandle, path, data }) => {
   try {
